@@ -10,6 +10,16 @@ function formatHM(ms) {
   return `${h}h ${m}m`;
 }
 
+function formatHMS(ms) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  if (h === 0) return `${m}:${pad(s)}`;
+  return `${h}:${pad(m)}:${pad(s)}`;
+}
+
 function formatHours(ms) {
   return (ms / 3600000).toFixed(1);
 }
@@ -29,6 +39,45 @@ function dayLabel(date) {
 
 function sameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function DayTimeline({ daySessions, dayStart }) {
+  const hourMarks = [0, 6, 12, 18, 24];
+
+  return (
+    <div>
+      <div style={{ position: "relative", height: 36, background: "var(--color-background-secondary)", borderRadius: 8, overflow: "hidden", border: "0.5px solid var(--color-border-tertiary)" }}>
+        {daySessions.map((s) => {
+          const startOffset = Math.max(0, s.start_ms - dayStart);
+          const endOffset = Math.min(86400000, s.end_ms - dayStart);
+          const leftPct = (startOffset / 86400000) * 100;
+          const widthPct = Math.max(0.3, ((endOffset - startOffset) / 86400000) * 100);
+          return (
+            <div
+              key={s.id}
+              title={`${s.category_name}: ${new Date(s.start_ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })} – ${new Date(s.end_ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`}
+              style={{
+                position: "absolute",
+                top: 0,
+                bottom: 0,
+                left: `${leftPct}%`,
+                width: `${widthPct}%`,
+                background: s.color,
+                opacity: 0.85,
+              }}
+            />
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+        {hourMarks.map((h) => (
+          <span key={h} style={{ fontSize: 10, color: "var(--color-text-tertiary)", fontVariantNumeric: "tabular-nums" }}>
+            {h === 0 ? "12am" : h === 12 ? "12pm" : h < 12 ? `${h}am` : `${h - 12}pm`}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 const ACTIVE_SESSION_KEY = "timelog_active_session";
@@ -237,9 +286,18 @@ export default function TimeTracker({ username, onLogout }) {
 
   return (
     <div style={{ maxWidth: 720, margin: "0 auto", fontFamily: "var(--font-sans)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "1.5rem" }}>
+      <style>{`
+        @keyframes pulse-dot {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.55; transform: scale(0.85); }
+        }
+        .timelog-cat-btn { transition: transform 0.12s ease, border-color 0.12s ease; }
+        .timelog-cat-btn:hover:not(:disabled) { transform: translateY(-1px); }
+      `}</style>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "1.75rem" }}>
         <div>
-          <h1 style={{ margin: 0 }}>Time log</h1>
+          <h1 style={{ margin: 0, fontSize: 26, letterSpacing: "-0.01em" }}>Time log</h1>
           <p style={{ color: "var(--color-text-secondary)", fontSize: 14, margin: "4px 0 0" }}>
             {username} · {today.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
           </p>
@@ -247,17 +305,17 @@ export default function TimeTracker({ username, onLogout }) {
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
           <button
             onClick={() => setView("today")}
-            style={{ fontSize: 13, padding: "6px 12px", background: view === "today" ? "var(--color-background-secondary)" : "transparent" }}
+            style={{ fontSize: 13, padding: "6px 12px", fontWeight: view === "today" ? 600 : 400, background: view === "today" ? "var(--color-background-secondary)" : "transparent" }}
           >
             Today
           </button>
           <button
             onClick={() => setView("week")}
-            style={{ fontSize: 13, padding: "6px 12px", background: view === "week" ? "var(--color-background-secondary)" : "transparent" }}
+            style={{ fontSize: 13, padding: "6px 12px", fontWeight: view === "week" ? 600 : 400, background: view === "week" ? "var(--color-background-secondary)" : "transparent" }}
           >
             Reports
           </button>
-          <button onClick={onLogout} style={{ fontSize: 13, padding: "6px 12px", marginLeft: 8 }}>
+          <button onClick={onLogout} style={{ fontSize: 13, padding: "6px 12px", marginLeft: 8, color: "var(--color-text-secondary)" }}>
             Sign out
           </button>
         </div>
@@ -281,28 +339,44 @@ export default function TimeTracker({ username, onLogout }) {
       {activeCategory && (
         <div
           style={{
-            background: "var(--color-background-secondary)",
+            background: `linear-gradient(135deg, ${activeCategory.color}14, ${activeCategory.color}05)`,
+            border: `1px solid ${activeCategory.color}33`,
             borderRadius: "var(--border-radius-lg)",
-            padding: "1rem 1.25rem",
+            padding: "1.1rem 1.4rem",
             marginBottom: "1.5rem",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ width: 10, height: 10, borderRadius: "50%", background: activeCategory.color, display: "inline-block" }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: "50%",
+                background: activeCategory.color,
+                display: "inline-block",
+                boxShadow: `0 0 0 4px ${activeCategory.color}22`,
+                animation: "pulse-dot 1.6s ease-in-out infinite",
+              }}
+            />
             <div>
-              <p style={{ margin: 0, fontSize: 14, fontWeight: 500 }}>{activeCategory.name}</p>
-              <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-secondary)" }}>
-                started {new Date(activeStart).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{activeCategory.name}</p>
+              <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)" }}>
+                since {new Date(activeStart).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
               </p>
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <span style={{ fontSize: 22, fontWeight: 500, fontFamily: "var(--font-mono)" }}>{formatHM(liveElapsed)}</span>
-            <button onClick={endSession} disabled={ending} style={{ fontSize: 13, padding: "8px 16px" }}>
-              <i className="ti ti-player-stop" style={{ fontSize: 16, verticalAlign: "-3px", marginRight: 4 }} aria-hidden="true"></i>
+          <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+            <span style={{ fontSize: 26, fontWeight: 600, fontFamily: "var(--font-mono)", letterSpacing: "0.01em", color: activeCategory.color, fontVariantNumeric: "tabular-nums" }}>
+              {formatHMS(liveElapsed)}
+            </span>
+            <button
+              onClick={endSession}
+              disabled={ending}
+              style={{ fontSize: 13, padding: "9px 18px", background: activeCategory.color, color: "#fff", border: "none", fontWeight: 500 }}
+            >
               {ending ? "Saving..." : "End"}
             </button>
           </div>
@@ -317,20 +391,33 @@ export default function TimeTracker({ username, onLogout }) {
               {categories.map((c) => (
                 <div key={c.id} style={{ position: "relative" }}>
                   <button
+                    className="timelog-cat-btn"
                     onClick={() => startSession(c)}
                     disabled={!!activeCategory}
-                    style={{ width: "100%", textAlign: "left", padding: "12px 14px", opacity: activeCategory ? 0.5 : 1, display: "flex", alignItems: "center", gap: 8 }}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "13px 14px",
+                      opacity: activeCategory ? 0.45 : 1,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 9,
+                      borderLeft: `3px solid ${c.color}`,
+                      borderTop: "0.5px solid var(--color-border-tertiary)",
+                      borderRight: "0.5px solid var(--color-border-tertiary)",
+                      borderBottom: "0.5px solid var(--color-border-tertiary)",
+                    }}
                   >
                     <span style={{ width: 8, height: 8, borderRadius: "50%", background: c.color, flexShrink: 0 }} />
-                    <span style={{ fontSize: 14 }}>{c.name}</span>
+                    <span style={{ fontSize: 14, fontWeight: 500 }}>{c.name}</span>
                   </button>
                   {!activeCategory && (
                     <button
                       onClick={() => deleteCategory(c.id)}
                       aria-label={`Remove ${c.name}`}
-                      style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, padding: 0, borderRadius: "50%", fontSize: 10, background: "var(--color-background-primary)", lineHeight: "16px" }}
+                      style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, padding: 0, borderRadius: "50%", fontSize: 11, lineHeight: "16px", background: "var(--color-background-primary)" }}
                     >
-                      <i className="ti ti-x" style={{ fontSize: 11 }} aria-hidden="true"></i>
+                      ×
                     </button>
                   )}
                 </div>
@@ -351,22 +438,30 @@ export default function TimeTracker({ username, onLogout }) {
                   </button>
                 </div>
               ) : (
-                <button onClick={() => setShowAddCategory(true)} style={{ fontSize: 13, padding: "12px 14px", color: "var(--color-text-secondary)" }}>
-                  <i className="ti ti-plus" style={{ fontSize: 14, verticalAlign: "-2px", marginRight: 4 }} aria-hidden="true"></i>
-                  New activity
+                <button
+                  onClick={() => setShowAddCategory(true)}
+                  style={{
+                    fontSize: 13,
+                    padding: "13px 14px",
+                    color: "var(--color-text-secondary)",
+                    border: "1px dashed var(--color-border-tertiary)",
+                    fontWeight: 500,
+                  }}
+                >
+                  + New activity
                 </button>
               )}
             </div>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: "1.5rem" }}>
-            <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "1rem" }}>
-              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px" }}>Logged today</p>
-              <p style={{ fontSize: 24, fontWeight: 500, margin: 0 }}>{formatHM(todayTotal)}</p>
+            <div style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-md)", padding: "1rem" }}>
+              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.04em" }}>Logged today</p>
+              <p style={{ fontSize: 26, fontWeight: 600, margin: 0, fontVariantNumeric: "tabular-nums" }}>{formatHM(todayTotal)}</p>
             </div>
-            <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "1rem" }}>
-              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px" }}>Sessions today</p>
-              <p style={{ fontSize: 24, fontWeight: 500, margin: 0 }}>{todaySessions.length}</p>
+            <div style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-md)", padding: "1rem" }}>
+              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.04em" }}>Sessions today</p>
+              <p style={{ fontSize: 26, fontWeight: 600, margin: 0, fontVariantNumeric: "tabular-nums" }}>{todaySessions.length}</p>
             </div>
           </div>
 
@@ -379,19 +474,16 @@ export default function TimeTracker({ username, onLogout }) {
                 {todaySessions.map((s) => (
                   <div
                     key={s.id}
-                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-md)" }}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderLeft: `3px solid ${s.color}`, borderTop: "0.5px solid var(--color-border-tertiary)", borderRight: "0.5px solid var(--color-border-tertiary)", borderBottom: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-md)" }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: s.color }} />
-                      <span style={{ fontSize: 13 }}>{s.category_name}</span>
-                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>{s.category_name}</span>
                     <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--color-text-secondary)" }}>
                       <span>
                         {new Date(s.start_ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
                         {" – "}
                         {new Date(s.end_ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
                       </span>
-                      <span style={{ fontWeight: 500, color: "var(--color-text-primary)" }}>{formatHM(s.duration_ms)}</span>
+                      <span style={{ fontWeight: 600, color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>{formatHM(s.duration_ms)}</span>
                     </div>
                   </div>
                 ))}
@@ -403,22 +495,22 @@ export default function TimeTracker({ username, onLogout }) {
 
       {view === "week" && (
         <>
-          <div style={{ display: "flex", gap: 4, marginBottom: "1.25rem" }}>
+          <div style={{ display: "inline-flex", gap: 2, marginBottom: "1.5rem", background: "var(--color-background-secondary)", padding: 3, borderRadius: 9 }}>
             <button
               onClick={() => setReportMode("week")}
-              style={{ fontSize: 13, padding: "6px 12px", background: reportMode === "week" ? "var(--color-background-secondary)" : "transparent" }}
+              style={{ fontSize: 13, padding: "6px 14px", fontWeight: reportMode === "week" ? 600 : 400, background: reportMode === "week" ? "var(--color-background-primary)" : "transparent", border: "none", boxShadow: reportMode === "week" ? "0 1px 2px rgba(0,0,0,0.08)" : "none" }}
             >
               By week
             </button>
             <button
               onClick={() => setReportMode("date")}
-              style={{ fontSize: 13, padding: "6px 12px", background: reportMode === "date" ? "var(--color-background-secondary)" : "transparent" }}
+              style={{ fontSize: 13, padding: "6px 14px", fontWeight: reportMode === "date" ? 600 : 400, background: reportMode === "date" ? "var(--color-background-primary)" : "transparent", border: "none", boxShadow: reportMode === "date" ? "0 1px 2px rgba(0,0,0,0.08)" : "none" }}
             >
               By date
             </button>
             <button
               onClick={() => setReportMode("year")}
-              style={{ fontSize: 13, padding: "6px 12px", background: reportMode === "year" ? "var(--color-background-secondary)" : "transparent" }}
+              style={{ fontSize: 13, padding: "6px 14px", fontWeight: reportMode === "year" ? 600 : 400, background: reportMode === "year" ? "var(--color-background-primary)" : "transparent", border: "none", boxShadow: reportMode === "year" ? "0 1px 2px rgba(0,0,0,0.08)" : "none" }}
             >
               By year
             </button>
@@ -427,26 +519,26 @@ export default function TimeTracker({ username, onLogout }) {
           {reportMode === "week" && (
             <>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
-                <button onClick={() => setWeekOffset((o) => o - 1)} style={{ fontSize: 13, padding: "6px 10px" }}>
-                  <i className="ti ti-chevron-left" style={{ fontSize: 14 }} aria-hidden="true"></i>
+                <button onClick={() => setWeekOffset((o) => o - 1)} style={{ fontSize: 16, fontWeight: 600, padding: "6px 14px" }}>
+                  −
                 </button>
                 <div style={{ textAlign: "center" }}>
                   <p style={{ margin: 0, fontSize: 14, fontWeight: 500 }}>{weekRangeLabel}</p>
                   <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)" }}>{isCurrentWeek ? "This week" : `${Math.abs(weekOffset)} week${Math.abs(weekOffset) > 1 ? "s" : ""} ago`}</p>
                 </div>
-                <button onClick={() => setWeekOffset((o) => Math.min(0, o + 1))} disabled={isCurrentWeek} style={{ fontSize: 13, padding: "6px 10px", opacity: isCurrentWeek ? 0.4 : 1 }}>
-                  <i className="ti ti-chevron-right" style={{ fontSize: 14 }} aria-hidden="true"></i>
+                <button onClick={() => setWeekOffset((o) => Math.min(0, o + 1))} disabled={isCurrentWeek} style={{ fontSize: 16, fontWeight: 600, padding: "6px 14px", opacity: isCurrentWeek ? 0.4 : 1 }}>
+                  +
                 </button>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: "1.5rem" }}>
                 <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "1rem" }}>
                   <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px" }}>Total</p>
-                  <p style={{ fontSize: 22, fontWeight: 500, margin: 0 }}>{formatHours(weekTotal)}h</p>
+                  <p style={{ fontSize: 22, fontWeight: 600, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{formatHours(weekTotal)}h</p>
                 </div>
                 <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "1rem" }}>
                   <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px" }}>Daily average</p>
-                  <p style={{ fontSize: 22, fontWeight: 500, margin: 0 }}>{formatHours(avgPerDay)}h</p>
+                  <p style={{ fontSize: 22, fontWeight: 600, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{formatHours(avgPerDay)}h</p>
                 </div>
                 <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "1rem" }}>
                   <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px" }}>Top activity</p>
@@ -504,13 +596,77 @@ export default function TimeTracker({ username, onLogout }) {
                     </div>
                   </div>
 
-                  <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-lg)", padding: "1rem 1.25rem" }}>
+                  <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-lg)", padding: "1rem 1.25rem", marginBottom: "2rem" }}>
                     <p style={{ fontSize: 13, fontWeight: 500, margin: "0 0 8px" }}>Summary</p>
                     <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px", lineHeight: 1.6 }}>
                       {formatHours(weekTotal)} hours logged across {categoryTotals.length} activities for {weekRangeLabel}.
                       {busiestDay.hours > 0 && ` ${busiestDay.day} was the busiest day at ${busiestDay.hours}h.`}
                       {topCategory.total > 0 && ` Most time went to ${topCategory.name}.`}
                     </p>
+                  </div>
+
+                  <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 10 }}>Day by day</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                    {weekDays.map((d) => {
+                      const daySessions = weekSessions
+                        .filter((s) => sameDay(new Date(s.start_ms), d))
+                        .sort((a, b) => a.start_ms - b.start_ms);
+                      const dayTotal = daySessions.reduce((sum, s) => sum + s.duration_ms, 0);
+                      const isToday = sameDay(d, today);
+
+                      return (
+                        <div key={d.toISOString()}>
+                          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 6 }}>
+                            <p style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>
+                              {d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}
+                              {isToday && <span style={{ fontWeight: 400, color: "var(--color-text-secondary)" }}> · today</span>}
+                            </p>
+                            <p style={{ fontSize: 12, color: "var(--color-text-secondary)", margin: 0, fontVariantNumeric: "tabular-nums" }}>
+                              {dayTotal > 0 ? formatHM(dayTotal) : "—"}
+                            </p>
+                          </div>
+
+                          {daySessions.length > 0 && (
+                            <div style={{ marginBottom: 8 }}>
+                              <DayTimeline daySessions={daySessions} dayStart={new Date(d).setHours(0, 0, 0, 0)} />
+                            </div>
+                          )}
+
+                          {daySessions.length === 0 ? (
+                            <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: 0 }}>Nothing logged</p>
+                          ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                              {daySessions.map((s) => (
+                                <div
+                                  key={s.id}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    padding: "7px 12px",
+                                    borderLeft: `3px solid ${s.color}`,
+                                    background: "var(--color-background-secondary)",
+                                    borderRadius: "var(--border-radius-sm)",
+                                  }}
+                                >
+                                  <span style={{ fontSize: 12.5, fontWeight: 500 }}>{s.category_name}</span>
+                                  <div style={{ display: "flex", gap: 10, fontSize: 11.5, color: "var(--color-text-secondary)" }}>
+                                    <span>
+                                      {new Date(s.start_ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                                      {" – "}
+                                      {new Date(s.end_ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                                    </span>
+                                    <span style={{ fontWeight: 600, color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                                      {formatHM(s.duration_ms)}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </>
               )}
@@ -531,8 +687,15 @@ export default function TimeTracker({ username, onLogout }) {
 
               <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "1rem", marginBottom: "1.5rem", maxWidth: 220 }}>
                 <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px" }}>Total logged</p>
-                <p style={{ fontSize: 24, fontWeight: 500, margin: 0 }}>{formatHM(dateTotal)}</p>
+                <p style={{ fontSize: 24, fontWeight: 600, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{formatHM(dateTotal)}</p>
               </div>
+
+              {dateSessions.length > 0 && (
+                <div style={{ marginBottom: "1.75rem" }}>
+                  <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 8 }}>24-hour view</p>
+                  <DayTimeline daySessions={dateSessions} dayStart={new Date(selectedDateObj).setHours(0, 0, 0, 0)} />
+                </div>
+              )}
 
               {dateSessions.length === 0 ? (
                 <p style={{ fontSize: 14, color: "var(--color-text-tertiary)" }}>Nothing logged on this date.</p>
@@ -597,7 +760,7 @@ export default function TimeTracker({ username, onLogout }) {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: "1.5rem" }}>
                 <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "1rem" }}>
                   <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px" }}>Total this year</p>
-                  <p style={{ fontSize: 22, fontWeight: 500, margin: 0 }}>{formatHours(yearTotal)}h</p>
+                  <p style={{ fontSize: 22, fontWeight: 600, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{formatHours(yearTotal)}h</p>
                 </div>
                 <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "1rem" }}>
                   <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px" }}>Busiest month</p>
@@ -655,13 +818,81 @@ export default function TimeTracker({ username, onLogout }) {
                     </div>
                   </div>
 
-                  <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-lg)", padding: "1rem 1.25rem" }}>
+                  <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-lg)", padding: "1rem 1.25rem", marginBottom: "2rem" }}>
                     <p style={{ fontSize: 13, fontWeight: 500, margin: "0 0 8px" }}>Summary</p>
                     <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px", lineHeight: 1.6 }}>
                       {formatHours(yearTotal)} hours logged across {yearCategoryTotals.length} activities in {selectedYear}.
                       {busiestMonth.hours > 0 && ` ${busiestMonth.month} was the busiest month at ${busiestMonth.hours}h.`}
                       {yearTopCategory.total > 0 && ` Most time overall went to ${yearTopCategory.name}.`}
                     </p>
+                  </div>
+
+                  <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 10 }}>Month by month</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    {monthNames.map((name, i) => {
+                      const monthSessions = yearSessions
+                        .filter((s) => new Date(s.start_ms).getMonth() === i)
+                        .sort((a, b) => a.start_ms - b.start_ms);
+                      if (monthSessions.length === 0) return null;
+
+                      const monthTotal = monthSessions.reduce((sum, s) => sum + s.duration_ms, 0);
+                      const byDay = {};
+                      monthSessions.forEach((s) => {
+                        const dayKey = new Date(s.start_ms).getDate();
+                        if (!byDay[dayKey]) byDay[dayKey] = [];
+                        byDay[dayKey].push(s);
+                      });
+
+                      return (
+                        <div key={name}>
+                          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
+                            <p style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>{name} {selectedYear}</p>
+                            <p style={{ fontSize: 12, color: "var(--color-text-secondary)", margin: 0, fontVariantNumeric: "tabular-nums" }}>
+                              {formatHours(monthTotal)}h total
+                            </p>
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            {Object.keys(byDay)
+                              .sort((a, b) => Number(a) - Number(b))
+                              .map((dayKey) => {
+                                const daySessions = byDay[dayKey];
+                                const dayDate = new Date(daySessions[0].start_ms);
+                                const dayTotal = daySessions.reduce((sum, s) => sum + s.duration_ms, 0);
+                                return (
+                                  <div key={dayKey} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 12.5 }}>
+                                    <span style={{ width: 64, flexShrink: 0, color: "var(--color-text-secondary)" }}>
+                                      {dayDate.toLocaleDateString(undefined, { weekday: "short", day: "numeric" })}
+                                    </span>
+                                    <div style={{ flex: 1, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                      {daySessions.map((s) => (
+                                        <span
+                                          key={s.id}
+                                          style={{
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            gap: 5,
+                                            padding: "3px 9px",
+                                            borderRadius: 100,
+                                            background: `${s.color}15`,
+                                            border: `1px solid ${s.color}33`,
+                                            fontSize: 11.5,
+                                          }}
+                                        >
+                                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.color }} />
+                                          {s.category_name} · {formatHM(s.duration_ms)}
+                                        </span>
+                                      ))}
+                                    </div>
+                                    <span style={{ flexShrink: 0, color: "var(--color-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
+                                      {formatHM(dayTotal)}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </>
               )}
