@@ -1,5 +1,7 @@
 # Time Log
 
+**[Try it live →](https://timelog-eight.vercel.app)**
+
 A time tracking tool built for students. Start a timer when you begin studying, working, attending class, or doing anything else you want to track. Stop it when you're done. Get a weekly breakdown of where your hours actually went.
 
 Built this after noticing how hard it is to actually know how much time goes into different parts of a week as a grad student — coursework, research, a part-time job, and everything else blur together without something tracking it.
@@ -16,9 +18,14 @@ The categories are not fixed. Add whatever you're tracking — thesis, GRE prep,
 2. Pick what you're starting from the category list, or add a new one
 3. A live timer runs while the session is active
 4. Press end when you're done — the session is saved
-5. Switch to the weekly report tab for a breakdown by day and by category, plus a short written summary
+5. Switch to the Reports tab for a breakdown by week, by a specific date with an hour-by-hour timeline, or by year with a month-by-month view
 
 Each account's data is private to that account and stored in a database, not the browser, so it survives across devices and sessions.
+
+## Live deployment
+
+- **App:** [timelog-eight.vercel.app](https://timelog-eight.vercel.app) (frontend, Vercel)
+- **API:** [timelog-api-sorm.onrender.com](https://timelog-api-sorm.onrender.com) (backend, Render)
 
 ## Running it locally
 
@@ -53,6 +60,7 @@ Runs on `http://localhost:3000` and talks to the API at `localhost:8000` by defa
 - FastAPI, SQLAlchemy, SQLite for the backend
 - JWT-based authentication with bcrypt password hashing
 - React for the frontend, Recharts for the weekly charts
+- Deployed on Render (API) and Vercel (frontend)
 
 ## Where this could go
 
