@@ -234,6 +234,7 @@ export default function TimeTracker({ username, onLogout }) {
   const categoryChartData = categoryTotals.map((c) => ({
     name: c.name,
     hours: Number((c.total / 3600000).toFixed(2)),
+    minutes: Math.max(1, Math.round(c.total / 60000)),
     color: c.color,
   }));
 
@@ -280,7 +281,7 @@ export default function TimeTracker({ username, onLogout }) {
     .filter((c) => c.total > 0)
     .sort((a, b) => b.total - a.total);
 
-  const yearCategoryChartData = yearCategoryTotals.map((c) => ({ name: c.name, hours: Number((c.total / 3600000).toFixed(1)), color: c.color }));
+  const yearCategoryChartData = yearCategoryTotals.map((c) => ({ name: c.name, hours: Number((c.total / 3600000).toFixed(1)), minutes: Math.max(1, Math.round(c.total / 60000)), color: c.color }));
   const busiestMonth = monthlyChartData.reduce((max, m) => (m.hours > max.hours ? m : max), { month: "-", hours: 0 });
   const yearTopCategory = yearCategoryTotals.reduce((max, c) => (c.total > max.total ? c : max), { name: "-", total: 0 });
 
@@ -570,12 +571,12 @@ export default function TimeTracker({ username, onLogout }) {
                     <div style={{ height: 200, width: 200, flexShrink: 0 }}>
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
-                          <Pie data={categoryChartData} dataKey="hours" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={2}>
+                          <Pie data={categoryChartData} dataKey="minutes" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={2}>
                             {categoryChartData.map((entry, i) => (
                               <Cell key={i} fill={entry.color} />
                             ))}
                           </Pie>
-                          <Tooltip formatter={(v) => [`${v}h`, "Logged"]} contentStyle={{ fontSize: 13, borderRadius: 8 }} />
+                          <Tooltip formatter={(v, n, p) => [formatHM(p.payload.minutes * 60000), p.payload.name]} contentStyle={{ fontSize: 13, borderRadius: 8 }} />
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
@@ -794,12 +795,12 @@ export default function TimeTracker({ username, onLogout }) {
                     <div style={{ height: 200, width: 200, flexShrink: 0 }}>
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
-                          <Pie data={yearCategoryChartData} dataKey="hours" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={2}>
+                          <Pie data={yearCategoryChartData} dataKey="minutes" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={2}>
                             {yearCategoryChartData.map((entry, i) => (
                               <Cell key={i} fill={entry.color} />
                             ))}
                           </Pie>
-                          <Tooltip formatter={(v) => [`${v}h`, "Logged"]} contentStyle={{ fontSize: 13, borderRadius: 8 }} />
+                          <Tooltip formatter={(v, n, p) => [formatHM(p.payload.minutes * 60000), p.payload.name]} contentStyle={{ fontSize: 13, borderRadius: 8 }} />
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
