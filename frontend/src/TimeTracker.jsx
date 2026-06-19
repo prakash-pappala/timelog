@@ -47,6 +47,13 @@ export default function TimeTracker({ username, onLogout }) {
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [view, setView] = useState("today");
+  const [reportMode, setReportMode] = useState("week");
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = new Date();
+    return d.toISOString().slice(0, 10);
+  });
 
   const tickRef = useRef(null);
 
@@ -143,6 +150,9 @@ export default function TimeTracker({ username, onLogout }) {
   const todayTotal = todaySessions.reduce((sum, s) => sum + s.duration_ms, 0);
 
   const weekStart = getWeekStart(today);
+  weekStart.setDate(weekStart.getDate() + weekOffset * 7);
+  const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
+
   const weekDays = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(weekStart);
     d.setDate(d.getDate() + i);
@@ -151,7 +161,7 @@ export default function TimeTracker({ username, onLogout }) {
 
   const weekSessions = sessions.filter((s) => {
     const sd = new Date(s.start_ms);
-    return sd >= weekStart && sd < new Date(weekStart.getTime() + 7 * 86400000);
+    return sd >= weekStart && sd < weekEnd;
   });
 
   const weekTotal = weekSessions.reduce((sum, s) => sum + s.duration_ms, 0);
@@ -183,6 +193,48 @@ export default function TimeTracker({ username, onLogout }) {
   const avgPerDay = weekTotal / 7;
   const liveElapsed = activeCategory ? now - activeStart : 0;
 
+  const isCurrentWeek = weekOffset === 0;
+  const weekRangeLabel = `${weekStart.toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${new Date(weekEnd.getTime() - 86400000).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+
+  const selectedDateObj = new Date(selectedDate + "T00:00:00");
+  const dateSessions = sessions.filter((s) => sameDay(new Date(s.start_ms), selectedDateObj));
+  const dateTotal = dateSessions.reduce((sum, s) => sum + s.duration_ms, 0);
+  const dateCategoryTotals = categories
+    .map((c) => {
+      const total = dateSessions.filter((s) => s.category_id === c.id).reduce((sum, s) => sum + s.duration_ms, 0);
+      return { ...c, total };
+    })
+    .filter((c) => c.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+  const availableYears = Array.from(
+    new Set(sessions.map((s) => new Date(s.start_ms).getFullYear()))
+  ).sort((a, b) => b - a);
+  if (!availableYears.includes(today.getFullYear())) availableYears.unshift(today.getFullYear());
+
+  const yearSessions = sessions.filter((s) => new Date(s.start_ms).getFullYear() === selectedYear);
+  const yearTotal = yearSessions.reduce((sum, s) => sum + s.duration_ms, 0);
+
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const monthlyChartData = monthNames.map((name, i) => {
+    const monthTotal = yearSessions
+      .filter((s) => new Date(s.start_ms).getMonth() === i)
+      .reduce((sum, s) => sum + s.duration_ms, 0);
+    return { month: name, hours: Number((monthTotal / 3600000).toFixed(1)) };
+  });
+
+  const yearCategoryTotals = categories
+    .map((c) => {
+      const total = yearSessions.filter((s) => s.category_id === c.id).reduce((sum, s) => sum + s.duration_ms, 0);
+      return { ...c, total };
+    })
+    .filter((c) => c.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+  const yearCategoryChartData = yearCategoryTotals.map((c) => ({ name: c.name, hours: Number((c.total / 3600000).toFixed(1)), color: c.color }));
+  const busiestMonth = monthlyChartData.reduce((max, m) => (m.hours > max.hours ? m : max), { month: "-", hours: 0 });
+  const yearTopCategory = yearCategoryTotals.reduce((max, c) => (c.total > max.total ? c : max), { name: "-", total: 0 });
+
   return (
     <div style={{ maxWidth: 720, margin: "0 auto", fontFamily: "var(--font-sans)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "1.5rem" }}>
@@ -203,7 +255,7 @@ export default function TimeTracker({ username, onLogout }) {
             onClick={() => setView("week")}
             style={{ fontSize: 13, padding: "6px 12px", background: view === "week" ? "var(--color-background-secondary)" : "transparent" }}
           >
-            Weekly report
+            Reports
           </button>
           <button onClick={onLogout} style={{ fontSize: 13, padding: "6px 12px", marginLeft: 8 }}>
             Sign out
@@ -351,79 +403,268 @@ export default function TimeTracker({ username, onLogout }) {
 
       {view === "week" && (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: "1.5rem" }}>
-            <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "1rem" }}>
-              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px" }}>This week</p>
-              <p style={{ fontSize: 22, fontWeight: 500, margin: 0 }}>{formatHours(weekTotal)}h</p>
-            </div>
-            <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "1rem" }}>
-              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px" }}>Daily average</p>
-              <p style={{ fontSize: 22, fontWeight: 500, margin: 0 }}>{formatHours(avgPerDay)}h</p>
-            </div>
-            <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "1rem" }}>
-              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px" }}>Top activity</p>
-              <p style={{ fontSize: 16, fontWeight: 500, margin: 0 }}>{topCategory.name}</p>
-            </div>
+          <div style={{ display: "flex", gap: 4, marginBottom: "1.25rem" }}>
+            <button
+              onClick={() => setReportMode("week")}
+              style={{ fontSize: 13, padding: "6px 12px", background: reportMode === "week" ? "var(--color-background-secondary)" : "transparent" }}
+            >
+              By week
+            </button>
+            <button
+              onClick={() => setReportMode("date")}
+              style={{ fontSize: 13, padding: "6px 12px", background: reportMode === "date" ? "var(--color-background-secondary)" : "transparent" }}
+            >
+              By date
+            </button>
+            <button
+              onClick={() => setReportMode("year")}
+              style={{ fontSize: 13, padding: "6px 12px", background: reportMode === "year" ? "var(--color-background-secondary)" : "transparent" }}
+            >
+              By year
+            </button>
           </div>
 
-          {weekSessions.length === 0 ? (
-            <p style={{ fontSize: 14, color: "var(--color-text-tertiary)" }}>
-              No sessions logged this week yet. Once you start tracking, your weekly breakdown shows up here.
-            </p>
-          ) : (
+          {reportMode === "week" && (
             <>
-              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 8 }}>Hours by day</p>
-              <div style={{ height: 200, marginBottom: "2rem" }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={dailyChartData} margin={{ top: 4, right: 4, left: -20, bottom: 4 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border-tertiary)" />
-                    <XAxis dataKey="day" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <Tooltip formatter={(v) => [`${v}h`, "Logged"]} contentStyle={{ fontSize: 13, borderRadius: 8 }} />
-                    <Bar dataKey="hours" fill="#534AB7" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
+                <button onClick={() => setWeekOffset((o) => o - 1)} style={{ fontSize: 13, padding: "6px 10px" }}>
+                  <i className="ti ti-chevron-left" style={{ fontSize: 14 }} aria-hidden="true"></i>
+                </button>
+                <div style={{ textAlign: "center" }}>
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 500 }}>{weekRangeLabel}</p>
+                  <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)" }}>{isCurrentWeek ? "This week" : `${Math.abs(weekOffset)} week${Math.abs(weekOffset) > 1 ? "s" : ""} ago`}</p>
+                </div>
+                <button onClick={() => setWeekOffset((o) => Math.min(0, o + 1))} disabled={isCurrentWeek} style={{ fontSize: 13, padding: "6px 10px", opacity: isCurrentWeek ? 0.4 : 1 }}>
+                  <i className="ti ti-chevron-right" style={{ fontSize: 14 }} aria-hidden="true"></i>
+                </button>
               </div>
 
-              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 8 }}>Time by activity</p>
-              <div style={{ display: "flex", alignItems: "center", gap: 24, marginBottom: "2rem", flexWrap: "wrap" }}>
-                <div style={{ height: 200, width: 200, flexShrink: 0 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={categoryChartData} dataKey="hours" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={2}>
-                        {categoryChartData.map((entry, i) => (
-                          <Cell key={i} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(v) => [`${v}h`, "Logged"]} contentStyle={{ fontSize: 13, borderRadius: 8 }} />
-                    </PieChart>
-                  </ResponsiveContainer>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: "1.5rem" }}>
+                <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "1rem" }}>
+                  <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px" }}>Total</p>
+                  <p style={{ fontSize: 22, fontWeight: 500, margin: 0 }}>{formatHours(weekTotal)}h</p>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1, minWidth: 180 }}>
-                  {categoryTotals
-                    .sort((a, b) => b.total - a.total)
-                    .map((c) => (
+                <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "1rem" }}>
+                  <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px" }}>Daily average</p>
+                  <p style={{ fontSize: 22, fontWeight: 500, margin: 0 }}>{formatHours(avgPerDay)}h</p>
+                </div>
+                <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "1rem" }}>
+                  <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px" }}>Top activity</p>
+                  <p style={{ fontSize: 16, fontWeight: 500, margin: 0 }}>{topCategory.name}</p>
+                </div>
+              </div>
+
+              {weekSessions.length === 0 ? (
+                <p style={{ fontSize: 14, color: "var(--color-text-tertiary)" }}>
+                  Nothing logged for this week.
+                </p>
+              ) : (
+                <>
+                  <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 8 }}>Hours by day</p>
+                  <div style={{ height: 200, marginBottom: "2rem" }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={dailyChartData} margin={{ top: 4, right: 4, left: -20, bottom: 4 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border-tertiary)" />
+                        <XAxis dataKey="day" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                        <Tooltip formatter={(v) => [`${v}h`, "Logged"]} contentStyle={{ fontSize: 13, borderRadius: 8 }} />
+                        <Bar dataKey="hours" fill="#534AB7" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 8 }}>Time by activity</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: 24, marginBottom: "2rem", flexWrap: "wrap" }}>
+                    <div style={{ height: 200, width: 200, flexShrink: 0 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={categoryChartData} dataKey="hours" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={2}>
+                            {categoryChartData.map((entry, i) => (
+                              <Cell key={i} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip formatter={(v) => [`${v}h`, "Logged"]} contentStyle={{ fontSize: 13, borderRadius: 8 }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1, minWidth: 180 }}>
+                      {categoryTotals
+                        .sort((a, b) => b.total - a.total)
+                        .map((c) => (
+                          <div key={c.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span style={{ width: 8, height: 8, borderRadius: "50%", background: c.color }} />
+                              {c.name}
+                            </span>
+                            <span style={{ color: "var(--color-text-secondary)" }}>
+                              {formatHours(c.total)}h ({Math.round((c.total / weekTotal) * 100)}%)
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+
+                  <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-lg)", padding: "1rem 1.25rem" }}>
+                    <p style={{ fontSize: 13, fontWeight: 500, margin: "0 0 8px" }}>Summary</p>
+                    <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px", lineHeight: 1.6 }}>
+                      {formatHours(weekTotal)} hours logged across {categoryTotals.length} activities for {weekRangeLabel}.
+                      {busiestDay.hours > 0 && ` ${busiestDay.day} was the busiest day at ${busiestDay.hours}h.`}
+                      {topCategory.total > 0 && ` Most time went to ${topCategory.name}.`}
+                    </p>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
+          {reportMode === "date" && (
+            <>
+              <div style={{ marginBottom: "1.5rem" }}>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  style={{ fontSize: 14, padding: "8px 10px" }}
+                />
+              </div>
+
+              <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "1rem", marginBottom: "1.5rem", maxWidth: 220 }}>
+                <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px" }}>Total logged</p>
+                <p style={{ fontSize: 24, fontWeight: 500, margin: 0 }}>{formatHM(dateTotal)}</p>
+              </div>
+
+              {dateSessions.length === 0 ? (
+                <p style={{ fontSize: 14, color: "var(--color-text-tertiary)" }}>Nothing logged on this date.</p>
+              ) : (
+                <>
+                  <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 10 }}>Breakdown</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: "1.5rem" }}>
+                    {dateCategoryTotals.map((c) => (
                       <div key={c.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
                         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <span style={{ width: 8, height: 8, borderRadius: "50%", background: c.color }} />
                           {c.name}
                         </span>
                         <span style={{ color: "var(--color-text-secondary)" }}>
-                          {formatHours(c.total)}h ({Math.round((c.total / weekTotal) * 100)}%)
+                          {formatHM(c.total)} ({Math.round((c.total / dateTotal) * 100)}%)
                         </span>
                       </div>
                     ))}
+                  </div>
+
+                  <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 10 }}>Sessions</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {dateSessions.map((s) => (
+                      <div
+                        key={s.id}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-md)" }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: "50%", background: s.color }} />
+                          <span style={{ fontSize: 13 }}>{s.category_name}</span>
+                        </div>
+                        <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--color-text-secondary)" }}>
+                          <span>
+                            {new Date(s.start_ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                            {" – "}
+                            {new Date(s.end_ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                          </span>
+                          <span style={{ fontWeight: 500, color: "var(--color-text-primary)" }}>{formatHM(s.duration_ms)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
+          {reportMode === "year" && (
+            <>
+              <div style={{ marginBottom: "1.5rem" }}>
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  style={{ fontSize: 14, padding: "8px 10px", borderRadius: 8, border: "0.5px solid var(--color-border-tertiary)" }}
+                >
+                  {availableYears.map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: "1.5rem" }}>
+                <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "1rem" }}>
+                  <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px" }}>Total this year</p>
+                  <p style={{ fontSize: 22, fontWeight: 500, margin: 0 }}>{formatHours(yearTotal)}h</p>
+                </div>
+                <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "1rem" }}>
+                  <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px" }}>Busiest month</p>
+                  <p style={{ fontSize: 16, fontWeight: 500, margin: 0 }}>{busiestMonth.month}</p>
+                </div>
+                <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "1rem" }}>
+                  <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px" }}>Top activity</p>
+                  <p style={{ fontSize: 16, fontWeight: 500, margin: 0 }}>{yearTopCategory.name}</p>
                 </div>
               </div>
 
-              <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-lg)", padding: "1rem 1.25rem" }}>
-                <p style={{ fontSize: 13, fontWeight: 500, margin: "0 0 8px" }}>Summary</p>
-                <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px", lineHeight: 1.6 }}>
-                  You logged {formatHours(weekTotal)} hours across {categoryTotals.length} activities this week.
-                  {busiestDay.hours > 0 && ` ${busiestDay.day} was your busiest day at ${busiestDay.hours}h.`}
-                  {topCategory.total > 0 && ` Most of your time went to ${topCategory.name}.`}
-                </p>
-              </div>
+              {yearSessions.length === 0 ? (
+                <p style={{ fontSize: 14, color: "var(--color-text-tertiary)" }}>No sessions logged in {selectedYear}.</p>
+              ) : (
+                <>
+                  <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 8 }}>Hours by month</p>
+                  <div style={{ height: 220, marginBottom: "2rem" }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={monthlyChartData} margin={{ top: 4, right: 4, left: -20, bottom: 4 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border-tertiary)" />
+                        <XAxis dataKey="month" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                        <Tooltip formatter={(v) => [`${v}h`, "Logged"]} contentStyle={{ fontSize: 13, borderRadius: 8 }} />
+                        <Bar dataKey="hours" fill="#0F6E56" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 8 }}>Time by activity</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: 24, marginBottom: "2rem", flexWrap: "wrap" }}>
+                    <div style={{ height: 200, width: 200, flexShrink: 0 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={yearCategoryChartData} dataKey="hours" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={2}>
+                            {yearCategoryChartData.map((entry, i) => (
+                              <Cell key={i} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip formatter={(v) => [`${v}h`, "Logged"]} contentStyle={{ fontSize: 13, borderRadius: 8 }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1, minWidth: 180 }}>
+                      {yearCategoryTotals.map((c) => (
+                        <div key={c.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: "50%", background: c.color }} />
+                            {c.name}
+                          </span>
+                          <span style={{ color: "var(--color-text-secondary)" }}>
+                            {formatHours(c.total)}h ({Math.round((c.total / yearTotal) * 100)}%)
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-lg)", padding: "1rem 1.25rem" }}>
+                    <p style={{ fontSize: 13, fontWeight: 500, margin: "0 0 8px" }}>Summary</p>
+                    <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 4px", lineHeight: 1.6 }}>
+                      {formatHours(yearTotal)} hours logged across {yearCategoryTotals.length} activities in {selectedYear}.
+                      {busiestMonth.hours > 0 && ` ${busiestMonth.month} was the busiest month at ${busiestMonth.hours}h.`}
+                      {yearTopCategory.total > 0 && ` Most time overall went to ${yearTopCategory.name}.`}
+                    </p>
+                  </div>
+                </>
+              )}
             </>
           )}
         </>
