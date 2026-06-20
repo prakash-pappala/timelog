@@ -8,10 +8,12 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 import bcrypt
 from jose import jwt, JWTError
-from sqlalchemy import create_engine, Column, String, Integer, BigInteger, ForeignKey
+from sqlalchemy import create_engine, Column, String, Integer, BigInteger, ForeignKey, Boolean
 from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./timetrack.db")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-in-production")
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_DAYS = 30
@@ -47,7 +49,7 @@ class Session_(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
     start_ms = Column(BigInteger, nullable=False)
-    end_ms = Column(BigInteger, nullable=False)
+    end_ms = Column(BigInteger, nullable=True)
     owner = relationship("User", back_populates="sessions")
     category = relationship("Category")
 
@@ -128,6 +130,15 @@ class SessionRequest(BaseModel):
     end_ms: int
 
 
+class StartSessionRequest(BaseModel):
+    category_id: int
+    start_ms: int
+
+
+class EndSessionRequest(BaseModel):
+    end_ms: int
+
+
 @app.post("/auth/signup")
 def signup(payload: SignupRequest, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.username == payload.username).first()
@@ -188,7 +199,12 @@ def delete_category(category_id: int, user: User = Depends(get_current_user), db
 
 @app.get("/sessions")
 def list_sessions(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    sessions = db.query(Session_).filter(Session_.user_id == user.id).order_by(Session_.start_ms.desc()).all()
+    sessions = (
+        db.query(Session_)
+        .filter(Session_.user_id == user.id, Session_.end_ms.isnot(None))
+        .order_by(Session_.start_ms.desc())
+        .all()
+    )
     return [
         {
             "id": s.id,
@@ -201,6 +217,75 @@ def list_sessions(user: User = Depends(get_current_user), db: Session = Depends(
         }
         for s in sessions
     ]
+
+
+@app.get("/sessions/active")
+def get_active_session(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    s = (
+        db.query(Session_)
+        .filter(Session_.user_id == user.id, Session_.end_ms.is_(None))
+        .order_by(Session_.start_ms.desc())
+        .first()
+    )
+    if not s:
+        return None
+    return {
+        "id": s.id,
+        "category_id": s.category_id,
+        "category_name": s.category.name if s.category else "Deleted",
+        "color": s.category.color if s.category else "#888780",
+        "start_ms": s.start_ms,
+    }
+
+
+@app.post("/sessions/start")
+def start_session(payload: StartSessionRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    cat = db.query(Category).filter(Category.id == payload.category_id, Category.user_id == user.id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail="Category not found")
+
+    existing_open = db.query(Session_).filter(Session_.user_id == user.id, Session_.end_ms.is_(None)).first()
+    if existing_open:
+        raise HTTPException(status_code=409, detail="A session is already running")
+
+    s = Session_(user_id=user.id, category_id=payload.category_id, start_ms=payload.start_ms, end_ms=None)
+    db.add(s)
+    db.commit()
+    db.refresh(s)
+
+    return {
+        "id": s.id,
+        "category_id": s.category_id,
+        "category_name": cat.name,
+        "color": cat.color,
+        "start_ms": s.start_ms,
+    }
+
+
+@app.post("/sessions/{session_id}/end")
+def end_session_endpoint(session_id: int, payload: EndSessionRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    s = db.query(Session_).filter(Session_.id == session_id, Session_.user_id == user.id).first()
+    if not s:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if s.end_ms is not None:
+        raise HTTPException(status_code=400, detail="Session already ended")
+    if payload.end_ms <= s.start_ms:
+        raise HTTPException(status_code=400, detail="End time must be after start time")
+
+    s.end_ms = payload.end_ms
+    db.commit()
+    db.refresh(s)
+
+    cat = s.category
+    return {
+        "id": s.id,
+        "category_id": s.category_id,
+        "category_name": cat.name if cat else "Deleted",
+        "color": cat.color if cat else "#888780",
+        "start_ms": s.start_ms,
+        "end_ms": s.end_ms,
+        "duration_ms": s.end_ms - s.start_ms,
+    }
 
 
 @app.post("/sessions")
