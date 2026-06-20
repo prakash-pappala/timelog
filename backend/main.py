@@ -1,6 +1,6 @@
 import os
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
@@ -150,7 +150,7 @@ def send_reset_email(to_email, username, reset_token):
 
 
 def create_token(user_id):
-    expire = datetime.utcnow() + timedelta(days=TOKEN_EXPIRE_DAYS)
+    expire = datetime.now(timezone.utc) + timedelta(days=TOKEN_EXPIRE_DAYS)
     payload = {"sub": str(user_id), "exp": expire}
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -283,7 +283,7 @@ def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db
         return generic_response
 
     token = secrets.token_urlsafe(32)
-    expires_at = datetime.utcnow() + timedelta(minutes=PASSWORD_RESET_EXPIRE_MINUTES)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=PASSWORD_RESET_EXPIRE_MINUTES)
 
     reset = PasswordResetToken(user_id=user.id, token=token, expires_at=expires_at)
     db.add(reset)
@@ -303,7 +303,7 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
         raise HTTPException(status_code=400, detail="This reset link is invalid")
     if reset.used:
         raise HTTPException(status_code=400, detail="This reset link has already been used")
-    if reset.expires_at < datetime.utcnow():
+    if reset.expires_at < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="This reset link has expired")
 
     user = db.query(User).filter(User.id == reset.user_id).first()
@@ -587,7 +587,7 @@ def admin_stats(admin: User = Depends(require_admin), db: Session = Depends(get_
         category_totals[name]["total_ms"] += duration
 
     # Users active in the last 7 days (had at least one session), count only — not who
-    seven_days_ago_ms = int((datetime.utcnow() - timedelta(days=7)).timestamp() * 1000)
+    seven_days_ago_ms = int((datetime.now(timezone.utc) - timedelta(days=7)).timestamp() * 1000)
     active_user_ids = set(
         s.user_id for s in all_sessions if s.start_ms >= seven_days_ago_ms
     )
