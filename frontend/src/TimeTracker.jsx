@@ -128,17 +128,6 @@ export default function TimeTracker({ username, onLogout }) {
   const [editTo, setEditTo] = useState("");
   const [editSaving, setEditSaving] = useState(false);
 
-  const [manualCategoryId, setManualCategoryId] = useState("");
-  const [manualFrom, setManualFrom] = useState("");
-  const [manualTo, setManualTo] = useState("");
-  const [manualSaving, setManualSaving] = useState(false);
-
-  const [editingSessionId, setEditingSessionId] = useState(null);
-  const [editCategoryId, setEditCategoryId] = useState("");
-  const [editFrom, setEditFrom] = useState("");
-  const [editTo, setEditTo] = useState("");
-  const [editSaving, setEditSaving] = useState(false);
-
   const tickRef = useRef(null);
   const pollRef = useRef(null);
 
