@@ -1,15 +1,15 @@
 const API_BASE = process.env.REACT_APP_API_BASE || "http://localhost:8000";
 
 function getToken() {
-  return window.sessionStorage.getItem("token");
+  return window.localStorage.getItem("token");
 }
 
 function setToken(token) {
-  window.sessionStorage.setItem("token", token);
+  window.localStorage.setItem("token", token);
 }
 
 function clearToken() {
-  window.sessionStorage.removeItem("token");
+  window.localStorage.removeItem("token");
 }
 
 async function request(path, options = {}) {
@@ -43,6 +43,20 @@ export const api = {
   deleteCategory: (id) => request(`/categories/${id}`, { method: "DELETE" }),
 
   getSessions: () => request("/sessions"),
+
+  getActiveSession: () => request("/sessions/active"),
+
+  startSession: (categoryId, startMs) =>
+    request("/sessions/start", {
+      method: "POST",
+      body: JSON.stringify({ category_id: categoryId, start_ms: startMs }),
+    }),
+
+  endActiveSession: (sessionId, endMs) =>
+    request(`/sessions/${sessionId}/end`, {
+      method: "POST",
+      body: JSON.stringify({ end_ms: endMs }),
+    }),
 
   createSession: (categoryId, startMs, endMs) =>
     request("/sessions", {
