@@ -1,5 +1,5 @@
 {
   "rewrites": [
-    { "source": "/((?!static|.*\\.\\w+$).*)", "destination": "/index.html" }
+    { "source": "/((?!static/).*)", "destination": "/index.html" }
   ]
 }
