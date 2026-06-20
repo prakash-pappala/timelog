@@ -29,11 +29,23 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  signup: (username, password) =>
-    request("/auth/signup", { method: "POST", body: JSON.stringify({ username, password }) }),
+  signup: (username, email, password) =>
+    request("/auth/signup", { method: "POST", body: JSON.stringify({ username, email, password }) }),
 
   login: (username, password) =>
     request("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+
+  forgotPassword: (email) =>
+    request("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) }),
+
+  resetPassword: (token, newPassword) =>
+    request("/auth/reset-password", { method: "POST", body: JSON.stringify({ token, new_password: newPassword }) }),
+
+  changePassword: (currentPassword, newPassword) =>
+    request("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
 
   getCategories: () => request("/categories"),
 

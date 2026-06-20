@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { api } from "./api";
 import AdminDashboard from "./AdminDashboard";
+import AccountSettings from "./AccountSettings";
 
 function formatHM(ms) {
   const totalMinutes = Math.floor(ms / 60000);
@@ -481,6 +482,12 @@ export default function TimeTracker({ username, isAdmin, onLogout }) {
               Admin
             </button>
           )}
+          <button
+            onClick={() => setView("account")}
+            style={{ fontSize: 13, padding: "6px 12px", fontWeight: view === "account" ? 600 : 400, background: view === "account" ? "var(--color-background-secondary)" : "transparent" }}
+          >
+            Account
+          </button>
           <button onClick={onLogout} style={{ fontSize: 13, padding: "6px 12px", marginLeft: 8, color: "var(--color-text-secondary)" }}>
             Sign out
           </button>
@@ -489,6 +496,8 @@ export default function TimeTracker({ username, isAdmin, onLogout }) {
 
       {view === "admin" ? (
         <AdminDashboard onBack={() => setView("today")} />
+      ) : view === "account" ? (
+        <AccountSettings onBack={() => setView("today")} />
       ) : (
       <>
 

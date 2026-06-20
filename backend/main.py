@@ -1,7 +1,9 @@
 import os
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 
+import httpx
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -19,6 +21,11 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-in-production")
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_DAYS = 30
 
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "onboarding@resend.dev")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://timelog-eight.vercel.app")
+PASSWORD_RESET_EXPIRE_MINUTES = 30
+
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {})
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
@@ -30,6 +37,7 @@ class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True)
     username = Column(String, unique=True, index=True, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=True)
     password_hash = Column(String, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -58,6 +66,16 @@ class Session_(Base):
     category = relationship("Category")
 
 
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    token = Column(String, unique=True, index=True, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 Base.metadata.create_all(bind=engine)
 
 # Lightweight migration: add columns that create_all() won't add to an already-existing table.
@@ -67,6 +85,8 @@ with engine.connect() as conn:
     if is_pg:
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now()"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR"))
+        conn.execute(text("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_email_key') THEN ALTER TABLE users ADD CONSTRAINT users_email_key UNIQUE (email); END IF; END $$;"))
         conn.execute(text("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now()"))
         conn.commit()
 
@@ -94,6 +114,39 @@ def hash_password(password):
 
 def verify_password(password, password_hash):
     return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+
+
+def send_reset_email(to_email, username, reset_token):
+    if not RESEND_API_KEY:
+        # No email service configured — fail quietly on the server side rather than
+        # leaking whether this is a config issue to the caller.
+        print(f"RESEND_API_KEY not set — would have emailed reset link to {to_email}")
+        return False
+
+    reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
+
+    html = f"""
+    <p>Hi {username},</p>
+    <p>You asked to reset your Time Log password. This link is valid for {PASSWORD_RESET_EXPIRE_MINUTES} minutes.</p>
+    <p><a href="{reset_link}">Reset your password</a></p>
+    <p>If you didn't request this, you can ignore this email.</p>
+    """
+
+    try:
+        response = httpx.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}"},
+            json={
+                "from": RESEND_FROM_EMAIL,
+                "to": [to_email],
+                "subject": "Reset your Time Log password",
+                "html": html,
+            },
+            timeout=10,
+        )
+        return response.status_code in (200, 201)
+    except httpx.HTTPError:
+        return False
 
 
 def create_token(user_id):
@@ -131,12 +184,27 @@ DEFAULT_CATEGORIES = [
 
 class SignupRequest(BaseModel):
     username: str
+    email: str
     password: str
 
 
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
 
 
 class CategoryRequest(BaseModel):
@@ -167,11 +235,19 @@ class EndSessionRequest(BaseModel):
 
 @app.post("/auth/signup")
 def signup(payload: SignupRequest, db: Session = Depends(get_db)):
+    email = payload.email.strip().lower()
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(status_code=400, detail="Enter a valid email address")
+
     existing = db.query(User).filter(User.username == payload.username).first()
     if existing:
         raise HTTPException(status_code=400, detail="Username already taken")
 
-    user = User(username=payload.username, password_hash=hash_password(payload.password))
+    existing_email = db.query(User).filter(User.email == email).first()
+    if existing_email:
+        raise HTTPException(status_code=400, detail="An account with that email already exists")
+
+    user = User(username=payload.username, email=email, password_hash=hash_password(payload.password))
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -192,6 +268,65 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
     token = create_token(user.id)
     return {"token": token, "username": user.username, "is_admin": user.is_admin}
+
+
+@app.post("/auth/forgot-password")
+def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    email = payload.email.strip().lower()
+    user = db.query(User).filter(User.email == email).first()
+
+    # Always return the same response whether or not the email exists,
+    # so this endpoint can't be used to discover which emails have accounts.
+    generic_response = {"message": "If that email has an account, a reset link has been sent."}
+
+    if not user:
+        return generic_response
+
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.utcnow() + timedelta(minutes=PASSWORD_RESET_EXPIRE_MINUTES)
+
+    reset = PasswordResetToken(user_id=user.id, token=token, expires_at=expires_at)
+    db.add(reset)
+    db.commit()
+
+    send_reset_email(user.email, user.username, token)
+    return generic_response
+
+
+@app.post("/auth/reset-password")
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+    if len(payload.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password should be at least 6 characters")
+
+    reset = db.query(PasswordResetToken).filter(PasswordResetToken.token == payload.token).first()
+    if not reset:
+        raise HTTPException(status_code=400, detail="This reset link is invalid")
+    if reset.used:
+        raise HTTPException(status_code=400, detail="This reset link has already been used")
+    if reset.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="This reset link has expired")
+
+    user = db.query(User).filter(User.id == reset.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    user.password_hash = hash_password(payload.new_password)
+    reset.used = True
+    db.commit()
+
+    return {"message": "Password updated. You can sign in now."}
+
+
+@app.post("/auth/change-password")
+def change_password(payload: ChangePasswordRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+    if len(payload.new_password) < 6:
+        raise HTTPException(status_code=400, detail="New password should be at least 6 characters")
+
+    user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    return {"message": "Password changed."}
 
 
 @app.get("/categories")
