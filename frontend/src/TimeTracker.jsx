@@ -80,8 +80,6 @@ function DayTimeline({ daySessions, dayStart }) {
   );
 }
 
-const ACTIVE_SESSION_KEY = "timelog_active_session";
-
 export default function TimeTracker({ username, onLogout }) {
   const [categories, setCategories] = useState([]);
   const [sessions, setSessions] = useState([]);
@@ -90,6 +88,7 @@ export default function TimeTracker({ username, onLogout }) {
 
   const [activeCategory, setActiveCategory] = useState(null);
   const [activeStart, setActiveStart] = useState(null);
+  const [activeSessionId, setActiveSessionId] = useState(null);
   const [now, setNow] = useState(Date.now());
   const [ending, setEnding] = useState(false);
 
@@ -108,13 +107,7 @@ export default function TimeTracker({ username, onLogout }) {
 
   useEffect(() => {
     loadData();
-
-    const saved = window.sessionStorage.getItem(ACTIVE_SESSION_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      setActiveCategory(parsed.category);
-      setActiveStart(parsed.start);
-    }
+    loadActiveSession();
   }, []);
 
   useEffect(() => {
@@ -138,24 +131,42 @@ export default function TimeTracker({ username, onLogout }) {
     }
   }
 
-  function startSession(category) {
+  async function loadActiveSession() {
+    try {
+      const active = await api.getActiveSession();
+      if (active) {
+        setActiveCategory({ id: active.category_id, name: active.category_name, color: active.color });
+        setActiveStart(active.start_ms);
+        setActiveSessionId(active.id);
+      }
+    } catch (err) {
+      // not fatal — just means no active session, or a transient network issue
+    }
+  }
+
+  async function startSession(category) {
     if (activeCategory) return;
     const start = Date.now();
-    setActiveCategory(category);
-    setActiveStart(start);
-    window.sessionStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify({ category, start }));
+    try {
+      const created = await api.startSession(category.id, start);
+      setActiveCategory(category);
+      setActiveStart(start);
+      setActiveSessionId(created.id);
+    } catch (err) {
+      setError("Could not start that session. " + err.message);
+    }
   }
 
   async function endSession() {
-    if (!activeCategory || ending) return;
+    if (!activeCategory || !activeSessionId || ending) return;
     setEnding(true);
     const end = Date.now();
     try {
-      const saved = await api.createSession(activeCategory.id, activeStart, end);
+      const saved = await api.endActiveSession(activeSessionId, end);
       setSessions((prev) => [saved, ...prev]);
-      window.sessionStorage.removeItem(ACTIVE_SESSION_KEY);
       setActiveCategory(null);
       setActiveStart(null);
+      setActiveSessionId(null);
     } catch (err) {
       setError("Could not save that session. " + err.message);
     } finally {
