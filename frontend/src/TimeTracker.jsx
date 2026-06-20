@@ -104,6 +104,7 @@ export default function TimeTracker({ username, onLogout }) {
   });
 
   const tickRef = useRef(null);
+  const pollRef = useRef(null);
 
   useEffect(() => {
     loadData();
@@ -116,6 +117,13 @@ export default function TimeTracker({ username, onLogout }) {
       return () => clearInterval(tickRef.current);
     }
   }, [activeCategory]);
+
+  useEffect(() => {
+    if (activeSessionId) {
+      pollRef.current = setInterval(checkActiveSessionStillRunning, 12000);
+      return () => clearInterval(pollRef.current);
+    }
+  }, [activeSessionId]);
 
   async function loadData() {
     setLoading(true);
@@ -144,6 +152,22 @@ export default function TimeTracker({ username, onLogout }) {
     }
   }
 
+  async function checkActiveSessionStillRunning() {
+    try {
+      const active = await api.getActiveSession();
+      if (!active) {
+        // It was ended somewhere else — pull the freshly closed session into history and clear local state
+        setActiveCategory(null);
+        setActiveStart(null);
+        setActiveSessionId(null);
+        const sess = await api.getSessions();
+        setSessions(sess);
+      }
+    } catch (err) {
+      // transient network hiccup — try again on the next poll, don't surface an error for this
+    }
+  }
+
   async function startSession(category) {
     if (activeCategory) return;
     const start = Date.now();
@@ -153,7 +177,12 @@ export default function TimeTracker({ username, onLogout }) {
       setActiveStart(start);
       setActiveSessionId(created.id);
     } catch (err) {
-      setError("Could not start that session. " + err.message);
+      if (err.message && err.message.toLowerCase().includes("already running")) {
+        // Another device started one a moment ago — pick up that session instead of erroring out.
+        await loadActiveSession();
+      } else {
+        setError("Could not start that session. " + err.message);
+      }
     }
   }
 
@@ -168,7 +197,19 @@ export default function TimeTracker({ username, onLogout }) {
       setActiveStart(null);
       setActiveSessionId(null);
     } catch (err) {
-      setError("Could not save that session. " + err.message);
+      if (err.message && err.message.toLowerCase().includes("already ended")) {
+        // It was ended from another browser between the click and this request landing.
+        // Not a real failure from the user's point of view — just sync up quietly.
+        setActiveCategory(null);
+        setActiveStart(null);
+        setActiveSessionId(null);
+        try {
+          const sess = await api.getSessions();
+          setSessions(sess);
+        } catch (_) {}
+      } else {
+        setError("Could not save that session. " + err.message);
+      }
     } finally {
       setEnding(false);
     }
