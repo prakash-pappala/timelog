@@ -41,6 +41,20 @@ function sameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
+function timeStringToMs(baseDate, timeStr) {
+  if (!timeStr) return null;
+  const [h, m] = timeStr.split(":").map(Number);
+  const d = new Date(baseDate);
+  d.setHours(h, m, 0, 0);
+  return d.getTime();
+}
+
+function msToTimeString(ms) {
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function DayTimeline({ daySessions, dayStart }) {
   const hourMarks = [0, 6, 12, 18, 24];
 
@@ -102,6 +116,28 @@ export default function TimeTracker({ username, onLogout }) {
     const d = new Date();
     return d.toISOString().slice(0, 10);
   });
+
+  const [manualCategoryId, setManualCategoryId] = useState("");
+  const [manualFrom, setManualFrom] = useState("");
+  const [manualTo, setManualTo] = useState("");
+  const [manualSaving, setManualSaving] = useState(false);
+
+  const [editingSessionId, setEditingSessionId] = useState(null);
+  const [editCategoryId, setEditCategoryId] = useState("");
+  const [editFrom, setEditFrom] = useState("");
+  const [editTo, setEditTo] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+
+  const [manualCategoryId, setManualCategoryId] = useState("");
+  const [manualFrom, setManualFrom] = useState("");
+  const [manualTo, setManualTo] = useState("");
+  const [manualSaving, setManualSaving] = useState(false);
+
+  const [editingSessionId, setEditingSessionId] = useState(null);
+  const [editCategoryId, setEditCategoryId] = useState("");
+  const [editFrom, setEditFrom] = useState("");
+  const [editTo, setEditTo] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   const tickRef = useRef(null);
   const pollRef = useRef(null);
@@ -235,6 +271,85 @@ export default function TimeTracker({ username, onLogout }) {
       setCategories((prev) => prev.filter((c) => c.id !== id));
     } catch (err) {
       setError("Could not remove that activity. " + err.message);
+    }
+  }
+
+  async function submitManualEntry() {
+    if (!manualCategoryId || !manualFrom || !manualTo) {
+      setError("Pick an activity and both times to add an entry.");
+      return;
+    }
+    const today = new Date();
+    const startMs = timeStringToMs(today, manualFrom);
+    const endMs = timeStringToMs(today, manualTo);
+
+    if (endMs <= startMs) {
+      setError("End time has to be after the start time.");
+      return;
+    }
+
+    setManualSaving(true);
+    setError("");
+    try {
+      const saved = await api.createSession(Number(manualCategoryId), startMs, endMs);
+      setSessions((prev) => [saved, ...prev]);
+      setManualCategoryId("");
+      setManualFrom("");
+      setManualTo("");
+    } catch (err) {
+      setError("Could not add that entry. " + err.message);
+    } finally {
+      setManualSaving(false);
+    }
+  }
+
+  function startEditSession(s) {
+    setEditingSessionId(s.id);
+    setEditCategoryId(String(s.category_id));
+    setEditFrom(msToTimeString(s.start_ms));
+    setEditTo(msToTimeString(s.end_ms));
+  }
+
+  function cancelEdit() {
+    setEditingSessionId(null);
+    setEditCategoryId("");
+    setEditFrom("");
+    setEditTo("");
+  }
+
+  async function submitEditSession(originalSession) {
+    if (!editCategoryId || !editFrom || !editTo) {
+      setError("Pick an activity and both times to save this edit.");
+      return;
+    }
+    const baseDate = new Date(originalSession.start_ms);
+    const startMs = timeStringToMs(baseDate, editFrom);
+    const endMs = timeStringToMs(baseDate, editTo);
+
+    if (endMs <= startMs) {
+      setError("End time has to be after the start time.");
+      return;
+    }
+
+    setEditSaving(true);
+    setError("");
+    try {
+      const updated = await api.updateSession(originalSession.id, Number(editCategoryId), startMs, endMs);
+      setSessions((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+      cancelEdit();
+    } catch (err) {
+      setError("Could not save that edit. " + err.message);
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  async function removeSession(id) {
+    try {
+      await api.deleteSession(id);
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+    } catch (err) {
+      setError("Could not delete that entry. " + err.message);
     }
   }
 
@@ -507,6 +622,46 @@ export default function TimeTracker({ username, onLogout }) {
             </div>
           </div>
 
+          <div style={{ marginBottom: "1.75rem" }}>
+            <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 8 }}>
+              Forgot to track it live? Add it manually
+            </p>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <select
+                value={manualCategoryId}
+                onChange={(e) => setManualCategoryId(e.target.value)}
+                style={{ fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "0.5px solid var(--color-border-tertiary)", minWidth: 130, flex: "1 1 130px" }}
+              >
+                <option value="">Activity</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <input
+                type="time"
+                value={manualFrom}
+                onChange={(e) => setManualFrom(e.target.value)}
+                aria-label="From"
+                style={{ fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "0.5px solid var(--color-border-tertiary)", flex: "1 1 110px" }}
+              />
+              <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>to</span>
+              <input
+                type="time"
+                value={manualTo}
+                onChange={(e) => setManualTo(e.target.value)}
+                aria-label="To"
+                style={{ fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "0.5px solid var(--color-border-tertiary)", flex: "1 1 110px" }}
+              />
+              <button
+                onClick={submitManualEntry}
+                disabled={manualSaving}
+                style={{ fontSize: 13, padding: "8px 16px", background: "var(--color-background-secondary)", fontWeight: 600, flex: "0 0 auto" }}
+              >
+                {manualSaving ? "Saving..." : "Add"}
+              </button>
+            </div>
+          </div>
+
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: "1.5rem" }}>
             <div style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-md)", padding: "1rem" }}>
               <p style={{ fontSize: 12, color: "var(--color-text-secondary)", margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.04em" }}>Logged today</p>
@@ -521,25 +676,67 @@ export default function TimeTracker({ username, onLogout }) {
           <div>
             <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 10 }}>Today's sessions</p>
             {todaySessions.length === 0 ? (
-              <p style={{ fontSize: 14, color: "var(--color-text-tertiary)" }}>Nothing logged yet. Start a category above when you begin.</p>
+              <p style={{ fontSize: 14, color: "var(--color-text-tertiary)" }}>Nothing logged yet. Start a category above, or add it manually below.</p>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {todaySessions.map((s) => (
-                  <div
-                    key={s.id}
-                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderLeft: `3px solid ${s.color}`, borderTop: "0.5px solid var(--color-border-tertiary)", borderRight: "0.5px solid var(--color-border-tertiary)", borderBottom: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-md)" }}
-                  >
-                    <span style={{ fontSize: 13, fontWeight: 500 }}>{s.category_name}</span>
-                    <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--color-text-secondary)" }}>
-                      <span>
-                        {new Date(s.start_ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
-                        {" – "}
-                        {new Date(s.end_ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
-                      </span>
-                      <span style={{ fontWeight: 600, color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>{formatHM(s.duration_ms)}</span>
+                {todaySessions.map((s) =>
+                  editingSessionId === s.id ? (
+                    <div
+                      key={s.id}
+                      style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "10px 14px", borderLeft: `3px solid ${s.color}`, border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-md)", background: "var(--color-background-secondary)" }}
+                    >
+                      <select
+                        value={editCategoryId}
+                        onChange={(e) => setEditCategoryId(e.target.value)}
+                        style={{ fontSize: 13, padding: "7px 9px", borderRadius: 8, border: "0.5px solid var(--color-border-tertiary)", flex: "1 1 120px" }}
+                      >
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="time"
+                        value={editFrom}
+                        onChange={(e) => setEditFrom(e.target.value)}
+                        style={{ fontSize: 13, padding: "7px 9px", borderRadius: 8, border: "0.5px solid var(--color-border-tertiary)", flex: "1 1 100px" }}
+                      />
+                      <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>to</span>
+                      <input
+                        type="time"
+                        value={editTo}
+                        onChange={(e) => setEditTo(e.target.value)}
+                        style={{ fontSize: 13, padding: "7px 9px", borderRadius: 8, border: "0.5px solid var(--color-border-tertiary)", flex: "1 1 100px" }}
+                      />
+                      <button onClick={() => submitEditSession(s)} disabled={editSaving} style={{ fontSize: 12, padding: "7px 12px", fontWeight: 600 }}>
+                        {editSaving ? "Saving..." : "Save"}
+                      </button>
+                      <button onClick={cancelEdit} style={{ fontSize: 12, padding: "7px 12px" }}>
+                        Cancel
+                      </button>
                     </div>
-                  </div>
-                ))}
+                  ) : (
+                    <div
+                      key={s.id}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderLeft: `3px solid ${s.color}`, borderTop: "0.5px solid var(--color-border-tertiary)", borderRight: "0.5px solid var(--color-border-tertiary)", borderBottom: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-md)" }}
+                    >
+                      <span style={{ fontSize: 13, fontWeight: 500 }}>{s.category_name}</span>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                        <span>
+                          {new Date(s.start_ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                          {" – "}
+                          {new Date(s.end_ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                        </span>
+                        <span style={{ fontWeight: 600, color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>{formatHM(s.duration_ms)}</span>
+                        <button onClick={() => startEditSession(s)} style={{ fontSize: 11, padding: "4px 9px", color: "var(--color-text-secondary)" }}>
+                          Edit
+                        </button>
+                        <button onClick={() => removeSession(s.id)} style={{ fontSize: 11, padding: "4px 9px", color: "var(--color-text-secondary)" }}>
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  )
+                )}
               </div>
             )}
           </div>
