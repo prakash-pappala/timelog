@@ -73,6 +73,7 @@ export const api = {
   deleteSession: (id) => request(`/sessions/${id}`, { method: "DELETE" }),
 
   getAdminStats: () => request("/admin/stats"),
+  getAdminUsers: () => request("/admin/users"),
 
   setToken,
   getToken,

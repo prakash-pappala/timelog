@@ -27,6 +27,7 @@ function dayLabel(date) {
 
 export default function AdminDashboard({ onBack }) {
   const [stats, setStats] = useState(null);
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -38,8 +39,9 @@ export default function AdminDashboard({ onBack }) {
     setLoading(true);
     setError("");
     try {
-      const data = await api.getAdminStats();
-      setStats(data);
+      const [statsData, usersData] = await Promise.all([api.getAdminStats(), api.getAdminUsers()]);
+      setStats(statsData);
+      setUsers(usersData);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -156,6 +158,49 @@ export default function AdminDashboard({ onBack }) {
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 10, marginTop: "2rem" }}>
+        Users — for troubleshooting only, no session content shown
+      </p>
+      {users.length === 0 ? (
+        <p style={{ fontSize: 14, color: "var(--color-text-tertiary)" }}>No users yet.</p>
+      ) : (
+        <div style={{ overflowX: "auto", border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-md)" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: "var(--color-background-secondary)", textAlign: "left" }}>
+                <th style={{ padding: "8px 12px", fontWeight: 600, fontSize: 11, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>ID</th>
+                <th style={{ padding: "8px 12px", fontWeight: 600, fontSize: 11, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Username</th>
+                <th style={{ padding: "8px 12px", fontWeight: 600, fontSize: 11, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Signed up</th>
+                <th style={{ padding: "8px 12px", fontWeight: 600, fontSize: 11, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Sessions</th>
+                <th style={{ padding: "8px 12px", fontWeight: 600, fontSize: 11, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Last active</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => (
+                <tr key={u.id} style={{ borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+                  <td style={{ padding: "8px 12px", fontVariantNumeric: "tabular-nums", color: "var(--color-text-secondary)" }}>{u.id}</td>
+                  <td style={{ padding: "8px 12px", fontWeight: 500 }}>
+                    {u.username}
+                    {u.is_admin && (
+                      <span style={{ marginLeft: 6, fontSize: 10, color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 4, padding: "1px 5px" }}>
+                        admin
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ padding: "8px 12px", color: "var(--color-text-secondary)" }}>
+                    {u.signed_up_at ? new Date(u.signed_up_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—"}
+                  </td>
+                  <td style={{ padding: "8px 12px", fontVariantNumeric: "tabular-nums" }}>{u.session_count}</td>
+                  <td style={{ padding: "8px 12px", color: "var(--color-text-secondary)" }}>
+                    {u.last_active_ms ? new Date(u.last_active_ms).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "Never"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

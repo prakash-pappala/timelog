@@ -475,6 +475,34 @@ def admin_stats(admin: User = Depends(require_admin), db: Session = Depends(get_
     }
 
 
+@app.get("/admin/users")
+def admin_users(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """
+    Per-user list for troubleshooting: who exists, when they signed up,
+    how many sessions they've logged, and when they were last active.
+    Deliberately excludes any actual session content (what they tracked,
+    at what time, for how long on a given day).
+    """
+    users = db.query(User).order_by(User.created_at.desc()).all()
+
+    result = []
+    for u in users:
+        ended_sessions = [s for s in u.sessions if s.end_ms is not None]
+        session_count = len(ended_sessions)
+        last_active_ms = max((s.start_ms for s in ended_sessions), default=None)
+
+        result.append({
+            "id": u.id,
+            "username": u.username,
+            "is_admin": u.is_admin,
+            "signed_up_at": u.created_at.isoformat() if u.created_at else None,
+            "session_count": session_count,
+            "last_active_ms": last_active_ms,
+        })
+
+    return result
+
+
 @app.get("/")
 def root():
     return {"status": "ok", "service": "Time Log API"}
