@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { api } from "./api";
+import AdminDashboard from "./AdminDashboard";
 
 function formatHM(ms) {
   const totalMinutes = Math.floor(ms / 60000);
@@ -94,7 +95,7 @@ function DayTimeline({ daySessions, dayStart }) {
   );
 }
 
-export default function TimeTracker({ username, onLogout }) {
+export default function TimeTracker({ username, isAdmin, onLogout }) {
   const [categories, setCategories] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -472,11 +473,24 @@ export default function TimeTracker({ username, onLogout }) {
           >
             Reports
           </button>
+          {isAdmin && (
+            <button
+              onClick={() => setView("admin")}
+              style={{ fontSize: 13, padding: "6px 12px", fontWeight: view === "admin" ? 600 : 400, background: view === "admin" ? "var(--color-background-secondary)" : "transparent" }}
+            >
+              Admin
+            </button>
+          )}
           <button onClick={onLogout} style={{ fontSize: 13, padding: "6px 12px", marginLeft: 8, color: "var(--color-text-secondary)" }}>
             Sign out
           </button>
         </div>
       </div>
+
+      {view === "admin" ? (
+        <AdminDashboard onBack={() => setView("today")} />
+      ) : (
+      <>
 
       {error && (
         <div
@@ -1138,6 +1152,8 @@ export default function TimeTracker({ username, onLogout }) {
             </>
           )}
         </>
+      )}
+      </>
       )}
     </div>
   );

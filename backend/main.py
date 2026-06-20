@@ -8,8 +8,9 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 import bcrypt
 from jose import jwt, JWTError
-from sqlalchemy import create_engine, Column, String, Integer, BigInteger, ForeignKey, Boolean
+from sqlalchemy import create_engine, Column, String, Integer, BigInteger, ForeignKey, Boolean, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
+from sqlalchemy.sql import func
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./timetrack.db")
 if DATABASE_URL.startswith("postgres://"):
@@ -30,6 +31,8 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     username = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
+    is_admin = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
     categories = relationship("Category", back_populates="owner", cascade="all, delete-orphan")
     sessions = relationship("Session_", back_populates="owner", cascade="all, delete-orphan")
 
@@ -50,11 +53,22 @@ class Session_(Base):
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
     start_ms = Column(BigInteger, nullable=False)
     end_ms = Column(BigInteger, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
     owner = relationship("User", back_populates="sessions")
     category = relationship("Category")
 
 
 Base.metadata.create_all(bind=engine)
+
+# Lightweight migration: add columns that create_all() won't add to an already-existing table.
+with engine.connect() as conn:
+    from sqlalchemy import text
+    is_pg = "postgresql" in DATABASE_URL
+    if is_pg:
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now()"))
+        conn.execute(text("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now()"))
+        conn.commit()
 
 app = FastAPI(title="Time Log API")
 
@@ -101,6 +115,12 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     return user
 
 
+def require_admin(user: User = Depends(get_current_user)):
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
 DEFAULT_CATEGORIES = [
     {"name": "Study", "color": "#534AB7"},
     {"name": "Work", "color": "#0F6E56"},
@@ -125,6 +145,12 @@ class CategoryRequest(BaseModel):
 
 
 class SessionRequest(BaseModel):
+    category_id: int
+    start_ms: int
+    end_ms: int
+
+
+class UpdateSessionRequest(BaseModel):
     category_id: int
     start_ms: int
     end_ms: int
@@ -155,7 +181,7 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
     db.commit()
 
     token = create_token(user.id)
-    return {"token": token, "username": user.username}
+    return {"token": token, "username": user.username, "is_admin": user.is_admin}
 
 
 @app.post("/auth/login")
@@ -165,7 +191,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Incorrect username or password")
 
     token = create_token(user.id)
-    return {"token": token, "username": user.username}
+    return {"token": token, "username": user.username, "is_admin": user.is_admin}
 
 
 @app.get("/categories")
@@ -318,6 +344,39 @@ def create_session(payload: SessionRequest, user: User = Depends(get_current_use
     }
 
 
+@app.put("/sessions/{session_id}")
+def update_session(session_id: int, payload: UpdateSessionRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    s = db.query(Session_).filter(Session_.id == session_id, Session_.user_id == user.id).first()
+    if not s:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if s.end_ms is None:
+        raise HTTPException(status_code=400, detail="Cannot edit a session that is still running")
+
+    cat = db.query(Category).filter(Category.id == payload.category_id, Category.user_id == user.id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail="Category not found")
+
+    if payload.end_ms <= payload.start_ms:
+        raise HTTPException(status_code=400, detail="End time must be after start time")
+
+    s.category_id = payload.category_id
+    s.start_ms = payload.start_ms
+    s.end_ms = payload.end_ms
+    db.commit()
+    db.refresh(s)
+
+    return {
+        "id": s.id,
+        "category_id": s.category_id,
+        "category_name": cat.name,
+        "color": cat.color,
+        "start_ms": s.start_ms,
+        "end_ms": s.end_ms,
+        "duration_ms": s.end_ms - s.start_ms,
+    }
+
+
 @app.delete("/sessions/{session_id}")
 def delete_session(session_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     s = db.query(Session_).filter(Session_.id == session_id, Session_.user_id == user.id).first()
@@ -326,6 +385,94 @@ def delete_session(session_id: int, user: User = Depends(get_current_user), db: 
     db.delete(s)
     db.commit()
     return {"deleted": session_id}
+
+
+class PromoteAdminRequest(BaseModel):
+    username: str
+    bootstrap_key: str
+
+
+@app.post("/admin/bootstrap")
+def bootstrap_admin(payload: PromoteAdminRequest, db: Session = Depends(get_db)):
+    """
+    One-time setup helper: promotes a user to admin if the request includes
+    the server's SECRET_KEY. This is only meant to be called once, by you,
+    to make your own account an admin. Anyone without the secret key gets rejected.
+    """
+    if payload.bootstrap_key != SECRET_KEY:
+        raise HTTPException(status_code=403, detail="Invalid bootstrap key")
+
+    target = db.query(User).filter(User.username == payload.username).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    target.is_admin = True
+    db.commit()
+    return {"username": target.username, "is_admin": True}
+
+
+@app.get("/admin/stats")
+def admin_stats(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """
+    Aggregate, anonymized usage stats only. No individual session content,
+    no per-user breakdowns by name, no timestamps tied to a specific student.
+    """
+    total_users = db.query(User).count()
+
+    all_sessions = db.query(Session_).filter(Session_.end_ms.isnot(None)).all()
+    total_sessions = len(all_sessions)
+    total_ms = sum((s.end_ms - s.start_ms) for s in all_sessions)
+
+    # Signups over the last 30 days, grouped by day
+    signup_rows = db.query(User.created_at).all()
+    signup_counts = {}
+    for (created_at,) in signup_rows:
+        if created_at is None:
+            continue
+        day_key = created_at.strftime("%Y-%m-%d")
+        signup_counts[day_key] = signup_counts.get(day_key, 0) + 1
+
+    # Sessions logged per day, last 30 days, by created_at (when the entry was saved)
+    session_rows = db.query(Session_.created_at).filter(Session_.end_ms.isnot(None)).all()
+    activity_counts = {}
+    for (created_at,) in session_rows:
+        if created_at is None:
+            continue
+        day_key = created_at.strftime("%Y-%m-%d")
+        activity_counts[day_key] = activity_counts.get(day_key, 0) + 1
+
+    # Category popularity across ALL users combined, by category name only (no user attribution)
+    category_totals = {}
+    for s in all_sessions:
+        name = s.category.name if s.category else "Deleted"
+        duration = s.end_ms - s.start_ms
+        if name not in category_totals:
+            category_totals[name] = {"sessions": 0, "total_ms": 0}
+        category_totals[name]["sessions"] += 1
+        category_totals[name]["total_ms"] += duration
+
+    # Users active in the last 7 days (had at least one session), count only — not who
+    seven_days_ago_ms = int((datetime.utcnow() - timedelta(days=7)).timestamp() * 1000)
+    active_user_ids = set(
+        s.user_id for s in all_sessions if s.start_ms >= seven_days_ago_ms
+    )
+
+    return {
+        "total_users": total_users,
+        "active_users_last_7_days": len(active_user_ids),
+        "total_sessions": total_sessions,
+        "total_hours_logged": round(total_ms / 3600000, 1),
+        "average_session_minutes": round((total_ms / total_sessions) / 60000, 1) if total_sessions else 0,
+        "signups_by_day": signup_counts,
+        "sessions_logged_by_day": activity_counts,
+        "category_totals": {
+            name: {
+                "sessions": v["sessions"],
+                "hours": round(v["total_ms"] / 3600000, 1),
+            }
+            for name, v in sorted(category_totals.items(), key=lambda kv: kv[1]["total_ms"], reverse=True)
+        },
+    }
 
 
 @app.get("/")

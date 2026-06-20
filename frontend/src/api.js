@@ -64,7 +64,15 @@ export const api = {
       body: JSON.stringify({ category_id: categoryId, start_ms: startMs, end_ms: endMs }),
     }),
 
+  updateSession: (sessionId, categoryId, startMs, endMs) =>
+    request(`/sessions/${sessionId}`, {
+      method: "PUT",
+      body: JSON.stringify({ category_id: categoryId, start_ms: startMs, end_ms: endMs }),
+    }),
+
   deleteSession: (id) => request(`/sessions/${id}`, { method: "DELETE" }),
+
+  getAdminStats: () => request("/admin/stats"),
 
   setToken,
   getToken,

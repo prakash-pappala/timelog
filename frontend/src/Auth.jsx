@@ -28,7 +28,7 @@ export default function Auth({ onAuthenticated }) {
         : await api.signup(username.trim(), password);
 
       api.setToken(result.token);
-      onAuthenticated(result.username);
+      onAuthenticated(result.username, result.is_admin);
     } catch (err) {
       setError(err.message);
     } finally {
