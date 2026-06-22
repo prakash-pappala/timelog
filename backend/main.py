@@ -90,6 +90,16 @@ with engine.connect() as conn:
         conn.execute(text("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now()"))
         conn.commit()
 
+# Backfill: add any missing default categories to existing users.
+# Runs every startup — only inserts categories that aren't already there.
+with SessionLocal() as _db:
+    for _user in _db.query(User).all():
+        existing = {c.name for c in _db.query(Category).filter(Category.user_id == _user.id).all()}
+        for _cat in DEFAULT_CATEGORIES:
+            if _cat["name"] not in existing:
+                _db.add(Category(user_id=_user.id, name=_cat["name"], color=_cat["color"]))
+    _db.commit()
+
 app = FastAPI(title="Time Log API")
 
 app.add_middleware(
@@ -179,10 +189,6 @@ DEFAULT_CATEGORIES = [
     {"name": "Work", "color": "#0F6E56"},
     {"name": "Classes", "color": "#185FA5"},
     {"name": "Research", "color": "#993C1D"},
-    {"name": "Instagram", "color": "#C13584"},
-    {"name": "YouTube", "color": "#CC0000"},
-    {"name": "Twitter / X", "color": "#1D9BF0"},
-    {"name": "TikTok", "color": "#010101"},
 ]
 
 
