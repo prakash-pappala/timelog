@@ -100,12 +100,31 @@ DEFAULT_CATEGORIES = [
 
 # Backfill: add any missing default categories to existing users.
 # Runs every startup — only inserts categories that aren't already there.
+# Also removes any default-originated categories that were removed from the list,
+# but only if they have zero sessions logged (never removes user-created categories).
+_default_names = {c["name"] for c in DEFAULT_CATEGORIES}
+_original_defaults = {
+    "Study", "Work", "Classes", "Research",
+    "Instagram", "YouTube", "Twitter / X", "TikTok", "Social Media",
+}
 with SessionLocal() as _db:
     for _user in _db.query(User).all():
-        existing = {c.name for c in _db.query(Category).filter(Category.user_id == _user.id).all()}
+        existing_cats = _db.query(Category).filter(Category.user_id == _user.id).all()
+        existing_names = {c.name for c in existing_cats}
+
+        # Add missing defaults
         for _cat in DEFAULT_CATEGORIES:
-            if _cat["name"] not in existing:
+            if _cat["name"] not in existing_names:
                 _db.add(Category(user_id=_user.id, name=_cat["name"], color=_cat["color"]))
+
+        # Remove stale defaults (in original defaults list but no longer in current list)
+        # Only removes if zero sessions logged — never touches user data
+        for _cat in existing_cats:
+            if _cat.name in _original_defaults and _cat.name not in _default_names:
+                session_count = _db.query(Session_).filter(Session_.category_id == _cat.id).count()
+                if session_count == 0:
+                    _db.delete(_cat)
+
     _db.commit()
 
 app = FastAPI(title="Time Log API")
