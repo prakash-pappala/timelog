@@ -157,7 +157,35 @@ export default function TimeTracker({ username, isAdmin, onLogout }) {
     setError("");
     try {
       const [cats, sess] = await Promise.all([api.getCategories(), api.getSessions()]);
-      setCategories(cats);
+
+      // First-time users (zero categories) get defaults seeded automatically.
+      // The backend does this at signup too, but this handles edge cases like
+      // a user deleting everything or signing up before the backend change deployed.
+      if (cats.length === 0) {
+        const defaults = [
+          { name: "Study",       color: "#534AB7" },
+          { name: "Work",        color: "#0F6E56" },
+          { name: "Classes",     color: "#185FA5" },
+          { name: "Research",    color: "#993C1D" },
+          { name: "Instagram",   color: "#C13584" },
+          { name: "YouTube",     color: "#CC0000" },
+          { name: "Twitter / X", color: "#1D9BF0" },
+          { name: "TikTok",      color: "#010101" },
+        ];
+        const created = [];
+        for (const { name, color } of defaults) {
+          try {
+            const cat = await api.createCategory(name, color);
+            created.push(cat);
+          } catch (_) {
+            // skip any individual failure — not fatal
+          }
+        }
+        setCategories(created);
+      } else {
+        setCategories(cats);
+      }
+
       setSessions(sess);
     } catch (err) {
       setError("Could not load your data. " + err.message);
