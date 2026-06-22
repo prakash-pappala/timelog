@@ -167,10 +167,7 @@ export default function TimeTracker({ username, isAdmin, onLogout }) {
           { name: "Work",        color: "#0F6E56" },
           { name: "Classes",     color: "#185FA5" },
           { name: "Research",    color: "#993C1D" },
-          { name: "Instagram",   color: "#C13584" },
-          { name: "YouTube",     color: "#CC0000" },
-          { name: "Twitter / X", color: "#1D9BF0" },
-          { name: "TikTok",      color: "#010101" },
+          { name: "Social Media", color: "#E1306C" },
         ];
         const created = [];
         for (const { name, color } of defaults) {
