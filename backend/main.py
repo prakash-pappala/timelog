@@ -90,6 +90,17 @@ with engine.connect() as conn:
         conn.execute(text("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now()"))
         conn.commit()
 
+DEFAULT_CATEGORIES = [
+    {"name": "Study",       "color": "#534AB7"},
+    {"name": "Work",        "color": "#0F6E56"},
+    {"name": "Classes",     "color": "#185FA5"},
+    {"name": "Research",    "color": "#993C1D"},
+    {"name": "Instagram",   "color": "#C13584"},
+    {"name": "YouTube",     "color": "#CC0000"},
+    {"name": "Twitter / X", "color": "#1D9BF0"},
+    {"name": "TikTok",      "color": "#010101"},
+]
+
 # Backfill: add any missing default categories to existing users.
 # Runs every startup — only inserts categories that aren't already there.
 with SessionLocal() as _db:
@@ -184,12 +195,7 @@ def require_admin(user: User = Depends(get_current_user)):
     return user
 
 
-DEFAULT_CATEGORIES = [
-    {"name": "Study", "color": "#534AB7"},
-    {"name": "Work", "color": "#0F6E56"},
-    {"name": "Classes", "color": "#185FA5"},
-    {"name": "Research", "color": "#993C1D"},
-]
+
 
 
 class SignupRequest(BaseModel):
