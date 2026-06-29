@@ -87,11 +87,6 @@ export const api = {
   getAdminStats: () => request("/admin/stats"),
   getAdminUsers: () => request("/admin/users"),
 
-  setToken,
-  getToken,
-  clearToken,
-};
-
   // Notes
   getNotes: () => request("/notes"),
   createNote: (content, date) => request("/notes", { method: "POST", body: JSON.stringify({ content, date }) }),
@@ -103,3 +98,8 @@ export const api = {
   createTodo: (text, date) => request("/todos", { method: "POST", body: JSON.stringify({ text, date }) }),
   updateTodo: (id, updates) => request(`/todos/${id}`, { method: "PATCH", body: JSON.stringify(updates) }),
   deleteTodo: (id) => request(`/todos/${id}`, { method: "DELETE" }),
+
+  setToken,
+  getToken,
+  clearToken,
+};
