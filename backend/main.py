@@ -43,6 +43,8 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     categories = relationship("Category", back_populates="owner", cascade="all, delete-orphan")
     sessions = relationship("Session_", back_populates="owner", cascade="all, delete-orphan")
+    notes = relationship("Note", back_populates="owner", cascade="all, delete-orphan")
+    todos = relationship("TodoItem", back_populates="owner", cascade="all, delete-orphan")
 
 
 class Category(Base):
@@ -76,6 +78,28 @@ class PasswordResetToken(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class Note(Base):
+    __tablename__ = "notes"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    content = Column(String, nullable=False)
+    date = Column(String, nullable=False)  # YYYY-MM-DD
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    owner = relationship("User", back_populates="notes")
+
+
+class TodoItem(Base):
+    __tablename__ = "todos"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    text = Column(String, nullable=False)
+    date = Column(String, nullable=False)  # YYYY-MM-DD
+    done = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    owner = relationship("User", back_populates="todos")
+
+
 Base.metadata.create_all(bind=engine)
 
 # Lightweight migration: add columns that create_all() won't add to an already-existing table.
@@ -89,43 +113,6 @@ with engine.connect() as conn:
         conn.execute(text("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_email_key') THEN ALTER TABLE users ADD CONSTRAINT users_email_key UNIQUE (email); END IF; END $$;"))
         conn.execute(text("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now()"))
         conn.commit()
-
-DEFAULT_CATEGORIES = [
-    {"name": "Study",       "color": "#534AB7"},
-    {"name": "Work",        "color": "#0F6E56"},
-    {"name": "Classes",     "color": "#185FA5"},
-    {"name": "Research",    "color": "#993C1D"},
-    {"name": "Social Media", "color": "#E1306C"},
-]
-
-# Backfill: add any missing default categories to existing users.
-# Runs every startup — only inserts categories that aren't already there.
-# Also removes any default-originated categories that were removed from the list,
-# but only if they have zero sessions logged (never removes user-created categories).
-_default_names = {c["name"] for c in DEFAULT_CATEGORIES}
-_original_defaults = {
-    "Study", "Work", "Classes", "Research",
-    "Instagram", "YouTube", "Twitter / X", "TikTok", "Social Media",
-}
-with SessionLocal() as _db:
-    for _user in _db.query(User).all():
-        existing_cats = _db.query(Category).filter(Category.user_id == _user.id).all()
-        existing_names = {c.name for c in existing_cats}
-
-        # Add missing defaults
-        for _cat in DEFAULT_CATEGORIES:
-            if _cat["name"] not in existing_names:
-                _db.add(Category(user_id=_user.id, name=_cat["name"], color=_cat["color"]))
-
-        # Remove stale defaults (in original defaults list but no longer in current list)
-        # Only removes if zero sessions logged — never touches user data
-        for _cat in existing_cats:
-            if _cat.name in _original_defaults and _cat.name not in _default_names:
-                session_count = _db.query(Session_).filter(Session_.category_id == _cat.id).count()
-                if session_count == 0:
-                    _db.delete(_cat)
-
-    _db.commit()
 
 app = FastAPI(title="Time Log API")
 
@@ -211,7 +198,12 @@ def require_admin(user: User = Depends(get_current_user)):
     return user
 
 
-
+DEFAULT_CATEGORIES = [
+    {"name": "Study", "color": "#534AB7"},
+    {"name": "Work", "color": "#0F6E56"},
+    {"name": "Classes", "color": "#185FA5"},
+    {"name": "Research", "color": "#993C1D"},
+]
 
 
 class SignupRequest(BaseModel):
@@ -673,3 +665,98 @@ def admin_users(admin: User = Depends(require_admin), db: Session = Depends(get_
 @app.get("/")
 def root():
     return {"status": "ok", "service": "Time Log API"}
+
+
+# ─── Notes ────────────────────────────────────────────────────────────────────
+
+class NoteRequest(BaseModel):
+    content: str
+    date: str  # YYYY-MM-DD
+
+
+@app.get("/notes")
+def list_notes(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    notes = db.query(Note).filter(Note.user_id == user.id).order_by(Note.date.desc(), Note.created_at.desc()).all()
+    return [{"id": n.id, "content": n.content, "date": n.date, "created_at": n.created_at.isoformat() if n.created_at else None} for n in notes]
+
+
+@app.post("/notes")
+def create_note(payload: NoteRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    note = Note(user_id=user.id, content=payload.content.strip(), date=payload.date)
+    db.add(note)
+    db.commit()
+    db.refresh(note)
+    return {"id": note.id, "content": note.content, "date": note.date, "created_at": note.created_at.isoformat() if note.created_at else None}
+
+
+@app.put("/notes/{note_id}")
+def update_note(note_id: int, payload: NoteRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    note = db.query(Note).filter(Note.id == note_id, Note.user_id == user.id).first()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    note.content = payload.content.strip()
+    db.commit()
+    db.refresh(note)
+    return {"id": note.id, "content": note.content, "date": note.date, "created_at": note.created_at.isoformat() if note.created_at else None}
+
+
+@app.delete("/notes/{note_id}")
+def delete_note(note_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    note = db.query(Note).filter(Note.id == note_id, Note.user_id == user.id).first()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    db.delete(note)
+    db.commit()
+    return {"deleted": note_id}
+
+
+# ─── Todos ────────────────────────────────────────────────────────────────────
+
+class TodoRequest(BaseModel):
+    text: str
+    date: str  # YYYY-MM-DD
+
+
+class TodoUpdateRequest(BaseModel):
+    text: Optional[str] = None
+    done: Optional[bool] = None
+
+
+@app.get("/todos")
+def list_todos(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    todos = db.query(TodoItem).filter(TodoItem.user_id == user.id).order_by(TodoItem.date.desc(), TodoItem.created_at.asc()).all()
+    return [{"id": t.id, "text": t.text, "date": t.date, "done": t.done, "created_at": t.created_at.isoformat() if t.created_at else None} for t in todos]
+
+
+@app.post("/todos")
+def create_todo(payload: TodoRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    todo = TodoItem(user_id=user.id, text=payload.text.strip(), date=payload.date, done=False)
+    db.add(todo)
+    db.commit()
+    db.refresh(todo)
+    return {"id": todo.id, "text": todo.text, "date": todo.date, "done": todo.done, "created_at": todo.created_at.isoformat() if todo.created_at else None}
+
+
+@app.patch("/todos/{todo_id}")
+def update_todo(todo_id: int, payload: TodoUpdateRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    todo = db.query(TodoItem).filter(TodoItem.id == todo_id, TodoItem.user_id == user.id).first()
+    if not todo:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    if payload.text is not None:
+        todo.text = payload.text.strip()
+    if payload.done is not None:
+        todo.done = payload.done
+    db.commit()
+    db.refresh(todo)
+    return {"id": todo.id, "text": todo.text, "date": todo.date, "done": todo.done, "created_at": todo.created_at.isoformat() if todo.created_at else None}
+
+
+@app.delete("/todos/{todo_id}")
+def delete_todo(todo_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    todo = db.query(TodoItem).filter(TodoItem.id == todo_id, TodoItem.user_id == user.id).first()
+    if not todo:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    db.delete(todo)
+    db.commit()
+    return {"deleted": todo_id}
+

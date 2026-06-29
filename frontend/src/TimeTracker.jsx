@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { api } from "./api";
+import Notebook from "./Notebook";
+import TodoList from "./TodoList";
 import AdminDashboard from "./AdminDashboard";
 import AccountSettings from "./AccountSettings";
 
@@ -100,6 +102,7 @@ export default function TimeTracker({ username, isAdmin, onLogout }) {
   const [categories, setCategories] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [pendingTodoCount, setPendingTodoCount] = useState(0);
   const [error, setError] = useState("");
 
   const [activeCategory, setActiveCategory] = useState(null);
@@ -136,6 +139,7 @@ export default function TimeTracker({ username, isAdmin, onLogout }) {
   useEffect(() => {
     loadData();
     loadActiveSession();
+    loadPendingTodos();
   }, []);
 
   useEffect(() => {
@@ -157,32 +161,7 @@ export default function TimeTracker({ username, isAdmin, onLogout }) {
     setError("");
     try {
       const [cats, sess] = await Promise.all([api.getCategories(), api.getSessions()]);
-
-      // First-time users (zero categories) get defaults seeded automatically.
-      // The backend does this at signup too, but this handles edge cases like
-      // a user deleting everything or signing up before the backend change deployed.
-      if (cats.length === 0) {
-        const defaults = [
-          { name: "Study",       color: "#534AB7" },
-          { name: "Work",        color: "#0F6E56" },
-          { name: "Classes",     color: "#185FA5" },
-          { name: "Research",    color: "#993C1D" },
-          { name: "Social Media", color: "#E1306C" },
-        ];
-        const created = [];
-        for (const { name, color } of defaults) {
-          try {
-            const cat = await api.createCategory(name, color);
-            created.push(cat);
-          } catch (_) {
-            // skip any individual failure — not fatal
-          }
-        }
-        setCategories(created);
-      } else {
-        setCategories(cats);
-      }
-
+      setCategories(cats);
       setSessions(sess);
     } catch (err) {
       setError("Could not load your data. " + err.message);
@@ -201,6 +180,15 @@ export default function TimeTracker({ username, isAdmin, onLogout }) {
       }
     } catch (err) {
       // not fatal — just means no active session, or a transient network issue
+    }
+  }
+
+  async function loadPendingTodos() {
+    try {
+      const todos = await api.getTodos();
+      setPendingTodoCount(todos.filter((t) => !t.done).length);
+    } catch (err) {
+      // not fatal
     }
   }
 
@@ -498,6 +486,23 @@ export default function TimeTracker({ username, isAdmin, onLogout }) {
             style={{ fontSize: 13, padding: "6px 12px", fontWeight: view === "week" ? 600 : 400, background: view === "week" ? "var(--color-background-secondary)" : "transparent" }}
           >
             Reports
+          </button>
+          <button
+            onClick={() => setView("notebook")}
+            style={{ fontSize: 13, padding: "6px 12px", fontWeight: view === "notebook" ? 600 : 400, background: view === "notebook" ? "var(--color-background-secondary)" : "transparent" }}
+          >
+            Notebook
+          </button>
+          <button
+            onClick={() => setView("todos")}
+            style={{ fontSize: 13, padding: "6px 12px", fontWeight: view === "todos" ? 600 : 400, background: view === "todos" ? "var(--color-background-secondary)" : "transparent", display: "flex", alignItems: "center", gap: 6 }}
+          >
+            To-do
+            {pendingTodoCount > 0 && (
+              <span style={{ fontSize: 11, fontWeight: 600, background: "#993C1D", color: "#fff", borderRadius: "100px", padding: "1px 7px", lineHeight: "18px" }}>
+                {pendingTodoCount}
+              </span>
+            )}
           </button>
           {isAdmin && (
             <button
@@ -1188,6 +1193,27 @@ export default function TimeTracker({ username, isAdmin, onLogout }) {
         </>
       )}
       </>
+      )}
+      {view === "notebook" && (
+        <>
+          <div style={{ marginBottom: "1.25rem" }}>
+            <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: 0 }}>
+              Your notebook — write anything, stored permanently and organized by date.
+            </p>
+          </div>
+          <Notebook />
+        </>
+      )}
+
+      {view === "todos" && (
+        <>
+          <div style={{ marginBottom: "1.25rem" }}>
+            <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: 0 }}>
+              Your to-do list — add tasks, check them off, scroll through days like a planner.
+            </p>
+          </div>
+          <TodoList onCountChange={setPendingTodoCount} />
+        </>
       )}
     </div>
   );
