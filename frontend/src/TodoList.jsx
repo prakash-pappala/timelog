@@ -10,13 +10,20 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function TodoList() {
+export default function TodoList({ onCountChange }) {
   const [todos, setTodos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [newText, setNewText] = useState("");
   const [newDate, setNewDate] = useState(today());
   const [adding, setAdding] = useState(false);
+
+  function updateTodos(newList) {
+    setTodos(newList);
+    if (onCountChange) {
+      onCountChange(newList.filter((t) => !t.done).length);
+    }
+  }
 
   useEffect(() => {
     loadTodos();
@@ -26,7 +33,7 @@ export default function TodoList() {
     setLoading(true);
     try {
       const data = await api.getTodos();
-      setTodos(data);
+      updateTodos(data);
     } catch (err) {
       setError("Could not load tasks. " + err.message);
     } finally {
@@ -39,10 +46,7 @@ export default function TodoList() {
     setAdding(true);
     try {
       const todo = await api.createTodo(newText.trim(), newDate);
-      setTodos((prev) => {
-        const next = [todo, ...prev];
-        return next.sort((a, b) => b.date.localeCompare(a.date) || new Date(a.created_at) - new Date(b.created_at));
-      });
+      updateTodos([todo, ...todos].sort((a, b) => b.date.localeCompare(a.date) || new Date(a.created_at) - new Date(b.created_at)));
       setNewText("");
     } catch (err) {
       setError("Could not add task. " + err.message);
@@ -54,7 +58,7 @@ export default function TodoList() {
   async function toggleDone(id, done) {
     try {
       const updated = await api.updateTodo(id, { done: !done });
-      setTodos((prev) => prev.map((t) => (t.id === id ? updated : t)));
+      updateTodos(todos.map((t) => (t.id === id ? updated : t)));
     } catch (err) {
       setError("Could not update task. " + err.message);
     }
@@ -63,7 +67,7 @@ export default function TodoList() {
   async function deleteTodo(id) {
     try {
       await api.deleteTodo(id);
-      setTodos((prev) => prev.filter((t) => t.id !== id));
+      updateTodos(todos.filter((t) => t.id !== id));
     } catch (err) {
       setError("Could not delete task. " + err.message);
     }
