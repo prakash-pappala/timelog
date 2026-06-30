@@ -114,7 +114,7 @@ with engine.connect() as conn:
         conn.execute(text("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now()"))
         conn.commit()
 
-app = FastAPI(title="Time Log API")
+app = FastAPI(title="TimeBook API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -664,7 +664,7 @@ def admin_users(admin: User = Depends(require_admin), db: Session = Depends(get_
 
 @app.get("/")
 def root():
-    return {"status": "ok", "service": "Time Log API"}
+    return {"status": "ok", "service": "TimeBook API"}
 
 
 # ─── Notes ────────────────────────────────────────────────────────────────────

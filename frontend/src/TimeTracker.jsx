@@ -463,13 +463,13 @@ export default function TimeTracker({ username, isAdmin, onLogout }) {
           0%, 100% { opacity: 1; transform: scale(1); }
           50% { opacity: 0.55; transform: scale(0.85); }
         }
-        .timelog-cat-btn { transition: transform 0.12s ease, border-color 0.12s ease; }
-        .timelog-cat-btn:hover:not(:disabled) { transform: translateY(-1px); }
+        .timebook-cat-btn { transition: transform 0.12s ease, border-color 0.12s ease; }
+        .timebook-cat-btn:hover:not(:disabled) { transform: translateY(-1px); }
       `}</style>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "1.75rem" }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 26, letterSpacing: "-0.01em" }}>Time log</h1>
+          <h1 style={{ margin: 0, fontSize: 26, letterSpacing: "-0.01em" }}>TimeBook</h1>
           <p style={{ color: "var(--color-text-secondary)", fontSize: 14, margin: "4px 0 0" }}>
             {username} · {today.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
           </p>
@@ -601,7 +601,7 @@ export default function TimeTracker({ username, isAdmin, onLogout }) {
               {categories.map((c) => (
                 <div key={c.id} style={{ position: "relative" }}>
                   <button
-                    className="timelog-cat-btn"
+                    className="timebook-cat-btn"
                     onClick={() => startSession(c)}
                     disabled={!!activeCategory}
                     style={{

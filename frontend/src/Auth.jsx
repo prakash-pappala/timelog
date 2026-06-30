@@ -230,7 +230,7 @@ export default function Auth({ onAuthenticated }) {
 
   return (
     <div style={{ maxWidth: 360, margin: "4rem auto 0", fontFamily: "var(--font-sans)" }}>
-      <h1 style={{ marginBottom: 4 }}>Time log</h1>
+      <h1 style={{ marginBottom: 4 }}>TimeBook</h1>
       <p style={{ color: "var(--color-text-secondary)", fontSize: 14, marginBottom: "1.5rem" }}>
         {mode === "login" ? "Sign in to your account" : "Create an account to start tracking"}
       </p>
