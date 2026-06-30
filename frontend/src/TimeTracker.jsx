@@ -457,7 +457,7 @@ export default function TimeTracker({ username, isAdmin, onLogout }) {
   const yearTopCategory = yearCategoryTotals.reduce((max, c) => (c.total > max.total ? c : max), { name: "-", total: 0 });
 
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", fontFamily: "var(--font-sans)" }}>
+    <div style={{ maxWidth: 720, margin: "0 auto", fontFamily: "var(--font-sans)", padding: "0 4px" }}>
       <style>{`
         @keyframes pulse-dot {
           0%, 100% { opacity: 1; transform: scale(1); }
@@ -465,16 +465,35 @@ export default function TimeTracker({ username, isAdmin, onLogout }) {
         }
         .timebook-cat-btn { transition: transform 0.12s ease, border-color 0.12s ease; }
         .timebook-cat-btn:hover:not(:disabled) { transform: translateY(-1px); }
+        .timebook-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 12px;
+          margin-bottom: 1.75rem;
+          flex-wrap: wrap;
+        }
+        .timebook-nav {
+          display: flex;
+          gap: 4px;
+          align-items: center;
+          flex-wrap: wrap;
+        }
+        @media (max-width: 560px) {
+          .timebook-header { flex-direction: column; align-items: stretch; }
+          .timebook-nav { width: 100%; justify-content: flex-start; }
+          .timebook-nav button { flex: 0 0 auto; }
+        }
       `}</style>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "1.75rem" }}>
+      <div className="timebook-header">
         <div>
           <h1 style={{ margin: 0, fontSize: 26, letterSpacing: "-0.01em" }}>TimeBook</h1>
           <p style={{ color: "var(--color-text-secondary)", fontSize: 14, margin: "4px 0 0" }}>
             {username} · {today.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
           </p>
         </div>
-        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+        <div className="timebook-nav">
           <button
             onClick={() => setView("today")}
             style={{ fontSize: 13, padding: "6px 12px", fontWeight: view === "today" ? 600 : 400, background: view === "today" ? "var(--color-background-secondary)" : "transparent" }}
