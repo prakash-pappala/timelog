@@ -642,9 +642,9 @@ export default function TimeTracker({ username, isAdmin, onLogout }) {
                   </button>
                   {!activeCategory && (
                     <button
-                      onClick={() => deleteCategory(c.id)}
+                      onClick={(e) => { e.stopPropagation(); deleteCategory(c.id); }}
                       aria-label={`Remove ${c.name}`}
-                      style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, padding: 0, borderRadius: "50%", fontSize: 11, lineHeight: "16px", background: "var(--color-background-primary)" }}
+                      style={{ position: "absolute", top: -8, right: -8, width: 22, height: 22, padding: 0, borderRadius: "50%", fontSize: 13, lineHeight: "20px", background: "var(--color-background-primary)", border: "1px solid var(--color-border-tertiary)", zIndex: 10 }}
                     >
                       ×
                     </button>
