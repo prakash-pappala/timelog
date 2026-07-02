@@ -60,7 +60,7 @@ class Session_(Base):
     __tablename__ = "sessions"
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     start_ms = Column(BigInteger, nullable=False)
     end_ms = Column(BigInteger, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -377,6 +377,8 @@ def delete_category(category_id: int, user: User = Depends(get_current_user), db
     cat = db.query(Category).filter(Category.id == category_id, Category.user_id == user.id).first()
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
+    # Nullify category reference on any sessions that used this category
+    db.query(Session_).filter(Session_.category_id == category_id, Session_.user_id == user.id).update({"category_id": None})
     db.delete(cat)
     db.commit()
     return {"deleted": category_id}
