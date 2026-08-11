@@ -1,31 +1,27 @@
 {
   "name": "TimeBook",
   "short_name": "TimeBook",
+  "id": "com.timebook.app",
   "description": "Student time tracking and productivity app",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#1877F2",
   "orientation": "portrait",
+  "lang": "en-US",
+  "dir": "ltr",
+  "scope": "/",
+  "categories": ["productivity", "utilities", "education"],
   "icons": [
     {
       "src": "/logo192.png",
-      "sizes": "192x192",
+      "sizes": "400x400",
       "type": "image/png"
     },
     {
       "src": "/logo512.png",
-      "sizes": "512x512",
+      "sizes": "400x400",
       "type": "image/png"
     }
-  ],
-  "id": "com.timebook.app",
-  "lang": "en",
-  "scope": "/",
-  "dir": "ltr",
-  "categories": [
-    "education",
-    "productivity",
-    "utilities"
   ]
 }
