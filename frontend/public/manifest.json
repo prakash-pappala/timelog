@@ -18,5 +18,14 @@
       "sizes": "512x512",
       "type": "image/png"
     }
+  ],
+  "id": "com.timebook.app",
+  "lang": "en",
+  "scope": "/",
+  "dir": "ltr",
+  "categories": [
+    "education",
+    "productivity",
+    "utilities"
   ]
 }
