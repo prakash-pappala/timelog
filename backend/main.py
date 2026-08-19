@@ -141,37 +141,42 @@ def verify_password(password, password_hash):
 
 
 def send_reset_email(to_email, username, reset_token):
-    if not RESEND_API_KEY:
-        # No email service configured — fail quietly on the server side rather than
-        # leaking whether this is a config issue to the caller.
-        print(f"RESEND_API_KEY not set — would have emailed reset link to {to_email}")
-        return False
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
 
-    reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
+    gmail_user = os.getenv("GMAIL_USER", "prakash.pappala1@gmail.com")
+    gmail_password = os.getenv("GMAIL_APP_PASSWORD")
+
+    if not gmail_password:
+        print(f"GMAIL_APP_PASSWORD not set — would have emailed reset link to {to_email}")
+        return
+
+    frontend_url = os.getenv("FRONTEND_URL", "https://timelog-eight.vercel.app")
+    reset_link = f"{frontend_url}?token={reset_token}"
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Reset your TimeBook password"
+    msg["From"] = gmail_user
+    msg["To"] = to_email
 
     html = f"""
     <p>Hi {username},</p>
-    <p>You asked to reset your Time Log password. This link is valid for {PASSWORD_RESET_EXPIRE_MINUTES} minutes.</p>
-    <p><a href="{reset_link}">Reset your password</a></p>
-    <p>If you didn't request this, you can ignore this email.</p>
+    <p>Click the link below to reset your TimeBook password:</p>
+    <p><a href="{reset_link}">Reset Password</a></p>
+    <p>This link expires in 1 hour.</p>
+    <p>If you didn't request this, ignore this email.</p>
     """
 
-    try:
-        response = httpx.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {RESEND_API_KEY}"},
-            json={
-                "from": RESEND_FROM_EMAIL,
-                "to": [to_email],
-                "subject": "Reset your Time Log password",
-                "html": html,
-            },
-            timeout=10,
-        )
-        return response.status_code in (200, 201)
-    except httpx.HTTPError:
-        return False
+    msg.attach(MIMEText(html, "html"))
 
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(gmail_user, gmail_password)
+            server.sendmail(gmail_user, to_email, msg.as_string())
+        print(f"Reset email sent to {to_email}")
+    except Exception as e:
+        print(f"Failed to send email: {e}")
 
 def create_token(user_id):
     expire = datetime.now(timezone.utc) + timedelta(days=TOKEN_EXPIRE_DAYS)
