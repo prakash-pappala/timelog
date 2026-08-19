@@ -141,40 +141,42 @@ def verify_password(password, password_hash):
 
 
 def send_reset_email(to_email, username, reset_token):
-    import smtplib
-    from email.mime.text import MIMEText
-    from email.mime.multipart import MIMEMultipart
-
-    gmail_user = os.getenv("GMAIL_USER", "prakash.pappala1@gmail.com")
-    gmail_password = os.getenv("GMAIL_APP_PASSWORD")
-
-    if not gmail_password:
-        print(f"GMAIL_APP_PASSWORD not set — would have emailed reset link to {to_email}")
+    import requests as http_requests
+    
+    brevo_key = os.getenv("BREVO_API_KEY")
+    if not brevo_key:
+        print(f"BREVO_API_KEY not set — would have emailed reset link to {to_email}")
         return
 
     frontend_url = os.getenv("FRONTEND_URL", "https://timelog-eight.vercel.app")
     reset_link = f"{frontend_url}?token={reset_token}"
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "Reset your TimeBook password"
-    msg["From"] = gmail_user
-    msg["To"] = to_email
-
-    html = f"""
-    <p>Hi {username},</p>
-    <p>Click the link below to reset your TimeBook password:</p>
-    <p><a href="{reset_link}">Reset Password</a></p>
-    <p>This link expires in 1 hour.</p>
-    <p>If you didn't request this, ignore this email.</p>
-    """
-
-    msg.attach(MIMEText(html, "html"))
+    payload = {
+        "sender": {"name": "TimeBook", "email": "prakash.pappala1@gmail.com"},
+        "to": [{"email": to_email}],
+        "subject": "Reset your TimeBook password",
+        "htmlContent": f"""
+        <p>Hi {username},</p>
+        <p>Click the link below to reset your TimeBook password:</p>
+        <p><a href="{reset_link}">Reset Password</a></p>
+        <p>This link expires in 1 hour.</p>
+        <p>If you didn't request this, ignore this email.</p>
+        """
+    }
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(gmail_user, gmail_password)
-            server.sendmail(gmail_user, to_email, msg.as_string())
-        print(f"Reset email sent to {to_email}")
+        res = http_requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            json=payload,
+            headers={
+                "api-key": brevo_key,
+                "Content-Type": "application/json"
+            }
+        )
+        if res.status_code == 201:
+            print(f"Reset email sent to {to_email}")
+        else:
+            print(f"Brevo error: {res.status_code} {res.text}")
     except Exception as e:
         print(f"Failed to send email: {e}")
 
